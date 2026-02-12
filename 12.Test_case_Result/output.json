@@ -1,0 +1,26 @@
+[
+    {
+        "where": "12. Test Case Result:",
+        "what": "Incorrect title: Found '12. Test Case Rest:'",
+        "suggestion": "Expected: '12. Test Case Result:'",
+        "redirect_text": "Test Case Rest:"
+    },
+    {
+        "where": "12. Test Case Result: - 1.1.1.1",
+        "what": "Incorrect sequence: Found '1.1.1.' in 'TEST CASE No.' column",
+        "suggestion": "Expected: '1.1.1.1'",
+        "redirect_text": "Test Case Rest:"
+    },
+    {
+        "where": "12. Test Case Result: - 1.1.1.3",
+        "what": "Result status is missing in 'PASS FAIL' column",
+        "suggestion": "Expected: PASS/FAIL/NA",
+        "redirect_text": "Test Case Rest:"
+    },
+    {
+        "where": "12. Test Case Result: - 1.1.1.6",
+        "what": "Remarks are non-descriptive: Found empty in 'Remarks' column",
+        "suggestion": "Add meaningful observations",
+        "redirect_text": "Test Case Rest:"
+    }
+]

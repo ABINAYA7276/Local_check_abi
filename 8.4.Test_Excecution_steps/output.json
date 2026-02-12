@@ -1,0 +1,38 @@
+[
+    {
+        "where": "8.4. Test Execution Steps",
+        "what": "Incorrect title: Found '8.4. Test Execution Sts'",
+        "suggestion": "Change title to exactly '8.4. Test Execution Steps'",
+        "redirect_text": "8.4. Test Execution Sts"
+    },
+    {
+        "where": "Test Scenario 1.1.1.1:",
+        "what": "Test Scenario ID out of sequence (1.1.1.2)",
+        "suggestion": "Renumber to 1.1.1.1",
+        "redirect_text": "Test Execution Sts"
+    },
+    {
+        "where": "Test Scenario 1.1.1.2:",
+        "what": "Incorrect format before ID (1.1.1.2)",
+        "suggestion": "Expected: 'Test Scenario 1.1.1.2:'",
+        "redirect_text": "Test Execution Sts"
+    },
+    {
+        "where": "Test Scenario 1.1.1.4:",
+        "what": "Base ID mismatch (1.1.4.4)",
+        "suggestion": "Expected Base ID: 1.1.1",
+        "redirect_text": "Test Execution Sts"
+    },
+    {
+        "where": "Test Scenario 1.1.1.2:",
+        "what": "Test Scenario content missing fully (Description and all steps)",
+        "suggestion": "Add description and execution steps for 1.1.1.2",
+        "redirect_text": "Test Execution Sts"
+    },
+    {
+        "where": "Test Scenario 1.1.1.8",
+        "what": "Missing content in execution steps: 1",
+        "suggestion": "Provide valid step descriptions for these steps.",
+        "redirect_text": "Test Execution Sts"
+    }
+]

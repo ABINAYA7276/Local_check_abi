@@ -1,0 +1,14 @@
+[
+    {
+        "where": "Section 3 - Requirement Description",
+        "what": "Incorrect title: Found '3. Requirement Desrip'",
+        "suggestion": "Change title to exactly '3. Requirement Description'",
+        "redirect_text": "3. Requirement Desrip"
+    },
+    {
+        "where": "Section 3 - Requirement Description",
+        "what": "Requirement description content is missing",
+        "suggestion": "Add a descriptive detail for the security requirement",
+        "redirect_text": "3. Requirement Desrip"
+    }
+]

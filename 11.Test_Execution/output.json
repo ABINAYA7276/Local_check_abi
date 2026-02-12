@@ -1,0 +1,80 @@
+[
+    {
+        "where": "Section 11 - 11. Test Execution:",
+        "what": "Incorrect Title: '11. Test Execut:'",
+        "suggestion": "Expected: '11. Test Execution:'",
+        "redirect_text": "11. Test Execut:"
+    },
+    {
+        "where": "Subsection 11.1 - Test Case Number:",
+        "what": "Incorrect title format: Found '11.1 face:'",
+        "suggestion": "Expected '11.1 Test Case Number:'",
+        "redirect_text": "11.1 face:"
+    },
+    {
+        "where": "Subsection 11.2 - Test Case Number:",
+        "what": "Incorrect title format: Found '11.2 Test Case Num:'",
+        "suggestion": "Expected '11.2 Test Case Number:'",
+        "redirect_text": "11.2 Test Case Num:"
+    },
+    {
+        "where": "Subsection 11.3 - Test Case Number:",
+        "what": "Incorrect sequence order: Found '11.9' in section 11",
+        "suggestion": "Expected 11.3",
+        "redirect_text": "11.9 scenario:"
+    },
+    {
+        "where": "Subsection 11.9 - Test Case Number:",
+        "what": "Incorrect title format: Found '11.9 scenario:'",
+        "suggestion": "Expected '11.9 Test Case Number:'",
+        "redirect_text": "11.9 scenario:"
+    },
+    {
+        "where": "Section 11 - 11.1 - 1.1.1.1 ITSAR WiFi-CPE",
+        "what": "Sequence Mismatch: Found '1.1.1.9'",
+        "suggestion": "Expected '1.1.1.1'",
+        "redirect_text": "11.1 face:"
+    },
+    {
+        "where": "Section 11 - 11.1 - 1.1.1.1 ITSAR WiFi-CPE",
+        "what": "Incorrect sequence: Found '11.1.2' in Figure ID",
+        "suggestion": "Expected suffix .10 (e.g. 11.1.10)",
+        "redirect_text": "11.1 face:"
+    },
+    {
+        "where": "Section 11 - 11.2 - 1.1.1.2:  ITSAR WiFi-CPE",
+        "what": "Sequence Mismatch: Found '1.1.1.9'",
+        "suggestion": "Expected '1.1.1.2'",
+        "redirect_text": "11.2 Test Case Num:"
+    },
+    {
+        "where": "Section 11 - 11.9 - 1.1.1.3 ITSAR WiFi-CPE",
+        "what": "Missing section: 'a. Test Case Name' section not found. Found: '1.1.1.3 ITSAR WiFi-CPE'",
+        "suggestion": "Add 'a. Test Case Name' section",
+        "redirect_text": "11.9 Test Case Number:"
+    },
+    {
+        "where": "Section 11 - 11.9 - 1.1.1.3 ITSAR WiFi-CPE",
+        "what": "Incorrect alignment: Found '11.3.1' in Figure ID",
+        "suggestion": "Expected to start with 11.9",
+        "redirect_text": "11.9 Test Case Number:"
+    },
+    {
+        "where": "Section 11 - 11.9 - 1.1.1.3 ITSAR WiFi-CPE",
+        "what": "Incorrect alignment: Found '11.3.2' in Figure ID",
+        "suggestion": "Expected to start with 11.9",
+        "redirect_text": "11.9 Test Case Number:"
+    },
+    {
+        "where": "Section 11 - 11.4 - 1.1.1.4 ITSAR hjkg",
+        "what": "Invalid format: Found '1.1.1.4 ITSAR hjkg'",
+        "suggestion": "Expected format: '1.1.1.4 ITSAR WiFi-CPE'",
+        "redirect_text": "11.4 Test Case Number:"
+    },
+    {
+        "where": "Section 11 - 11.5 - 1.1.1.5 ITSAR WiFPE",
+        "what": "Invalid format: Found '1.1.1.5 ITSAR WiFPE'",
+        "suggestion": "Expected format: '1.1.1.5 ITSAR WiFi-CPE'",
+        "redirect_text": "11.5 Test Case Number:"
+    }
+]

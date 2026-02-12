@@ -1,0 +1,14 @@
+[
+    {
+        "where": "Section 8.3 - Tools Required",
+        "what": "Incorrect title: Found '8.3. Tools Requid'",
+        "suggestion": "Change title to exactly '8.3. Tools Required'",
+        "redirect_text": "8.3. Tools Requid"
+    },
+    {
+        "where": "Section 8.3 - Tools Required",
+        "what": "Tool version missing or invalid format: 'Wireshark v ()'",
+        "suggestion": "Ensure format includes version checks (e.g., v7.95.0 or v (0.83))",
+        "redirect_text": "8.3. Tools Requid"
+    }
+]

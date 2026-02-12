@@ -1,0 +1,14 @@
+[
+    {
+        "where": "10. Expected Format of Evidence:",
+        "what": "title mismatch. Found: 'Expected Format of Evidee:'",
+        "suggestion": "Correct title to '10. Expected Format of Evidence:'",
+        "redirect_text": "Expected Format of Evidee:"
+    },
+    {
+        "where": "10. Expected Format of Evidence:",
+        "what": "content missing. Found: ''",
+        "suggestion": "Add Expected Format of Evidence content",
+        "redirect_text": "Expected Format of Evidee:"
+    }
+]

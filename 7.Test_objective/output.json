@@ -1,0 +1,14 @@
+[
+    {
+        "where": "Section 7 - Test Objective",
+        "what": "Incorrect title: Found '7. Test bjective'",
+        "suggestion": "Change title to exactly '7. Test Objective'",
+        "redirect_text": "7. Test bjective"
+    },
+    {
+        "where": "Section 7 - Test Objective",
+        "what": "Test objective is missing or non-descriptive",
+        "suggestion": "Add a clear test objective",
+        "redirect_text": "7. Test bjective"
+    }
+]

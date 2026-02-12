@@ -1,0 +1,14 @@
+[
+    {
+        "where": "Section 4 - DUT Confirmation Details",
+        "what": "Incorrect title: Found '5. 8.DUT Confirmation Det'",
+        "suggestion": "Change title to exactly '4. DUT Confirmation Details'",
+        "redirect_text": "5. 8.DUT Confirmation Det"
+    },
+    {
+        "where": "Section 4 - DUT Confirmation Details",
+        "what": "Missing value(s) in Row 1: Interface Type",
+        "suggestion": "Provide values for: Interface Type",
+        "redirect_text": "DUT Interface Status details"
+    }
+]

@@ -1,0 +1,32 @@
+[
+    {
+        "where": "9. Expected Results for Pass:",
+        "what": "Incorrect title: Found '10. Expectedsults for Pass:'",
+        "suggestion": "Change title to exactly '9. Expected Results for Pass:'",
+        "redirect_text": "10. Expectedsults for Pass:"
+    },
+    {
+        "where": "Test Scenario 1.1.1.1",
+        "what": "ID alignment mismatch (1.1.1.9)",
+        "suggestion": "Renumber to 1.1.1.1",
+        "redirect_text": "10. Expectedsults for Pass:"
+    },
+    {
+        "where": "Test Scenario 1.1.1.2",
+        "what": "ID alignment mismatch (1.1.1.0)",
+        "suggestion": "Renumber to 1.1.1.2",
+        "redirect_text": "10. Expectedsults for Pass:"
+    },
+    {
+        "where": "Test Scenario 1.1.1.3",
+        "what": "Base ID mismatch (1.2.1.5)",
+        "suggestion": "Expected Base ID: 1.1.1",
+        "redirect_text": "10. Expectedsults for Pass:"
+    },
+    {
+        "where": "Test Scenario 1.1.1.11",
+        "what": "Expected Result content missing",
+        "suggestion": "Add result description after '1.1.1.11:'",
+        "redirect_text": "10. Expectedsults for Pass:"
+    }
+]

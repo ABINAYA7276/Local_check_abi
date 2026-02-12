@@ -1,0 +1,26 @@
+[
+    {
+        "where": "8.1. Number of Test Scenarios:",
+        "what": "Incorrect title: Found '81. Number of Test Scarios:'",
+        "suggestion": "Change title '81. Number of Test Scarios:' to exactly '8.1. Number of Test Scenarios:'",
+        "redirect_text": "81. Number of Test Scarios:"
+    },
+    {
+        "where": "Test Scenario 1.1.1.2",
+        "what": "ID alignment mismatch (1.1.1.2)",
+        "suggestion": "Correct ID to 1.1.1.1",
+        "redirect_text": "81. Number of Test Scarios:"
+    },
+    {
+        "where": "Test Scenario 1.2.1.2",
+        "what": "Base ID mismatch (1.2.1.2)",
+        "suggestion": "Expected Base ID: 1.1.1",
+        "redirect_text": "81. Number of Test Scarios:"
+    },
+    {
+        "where": "Test Scenario 1.1.1.3",
+        "what": "test scenario content missing",
+        "suggestion": "Add description after 'Test Scenario 1.1.1.3:'",
+        "redirect_text": "81. Number of Test Scarios:"
+    }
+]
