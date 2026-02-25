@@ -1,14 +1,9 @@
 [
     {
         "where": "10. Expected Format of Evidence:",
-        "what": "title mismatch. Found: 'Expected Format of Evidee:'",
-        "suggestion": "Correct title to '10. Expected Format of Evidence:'",
-        "redirect_text": "Expected Format of Evidee:"
-    },
-    {
-        "where": "10. Expected Format of Evidence:",
-        "what": "content missing. Found: ''",
-        "suggestion": "Add Expected Format of Evidence content",
-        "redirect_text": "Expected Format of Evidee:"
+        "what": "content missing in 10. Expected Format of Evidence:. Found: '{'type': 'paragraph', 'text': ''}'",
+        "suggestion": "Add Expected Format of Evidence description",
+        "redirect_text": "Expected Format of Evidence:",
+        "severity": "high"
     }
 ]

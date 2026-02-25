@@ -27,6 +27,16 @@ def is_valid_sentence(text):
     return True
 
 def main():
+    def output_result(data, exit_code=0):
+        try:
+            with open('output.json', 'w', encoding='utf-8') as f_out:
+                json.dump(data, f_out, indent=4)
+        except Exception as write_err:
+             # If we can't write to file, we still print to stdout
+             pass
+        print(json.dumps(data, indent=4))
+        sys.exit(exit_code)
+
     parser = argparse.ArgumentParser(description="Validate Section 1: ITSAR Section No & Name.")
     parser.add_argument("json_file", type=str, help="Path to the structured JSON file")
     
@@ -34,12 +44,11 @@ def main():
     file_path = args.json_file
 
     if not os.path.isfile(file_path):
-        print(json.dumps([{
+        output_result([{
             "where": "Section 1 - ITSAR Section No & Name",
             "what": f"File not found: {file_path}",
             "suggestion": "Provide a valid JSON file path"
-        }], indent=4))
-        sys.exit(1)
+        }], 1)
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -53,129 +62,107 @@ def main():
         # but User emphasized "check only section 1... or else overlap".
         # So we filter strictly.
         
+        # 1. IDENTIFICATION & TITLE CHECK (BLOCKING)
+        # We need to find the section first.
         for section in sections:
             title = section.get('title', '').strip()
-            # Strict check: Starts with "1." AND NOT "1.1", "11.", etc.
-            # AND excludes other known sections if they accidentally match "1." (unlikely but safe)
-            if title.startswith('1.') and not title.startswith('1.1'):
-                target_section = section
-                break
+            title_lower = title.lower()
             
-            # Also allow explicit ID if available
-            if section.get('section_id') == 'SEC-01':
+            # Loose check to FIND the section
+            if title.startswith('1.') or 'itsar' in title_lower or section.get('section_id') == 'SEC-01':
                 target_section = section
                 break
+        
+        # Standard definitions for reporting
+        standard_title = "1. ITSAR Section No & Name"
+        stable_redirect = "ITSAR Section No & Name"
         
         all_errors = []
 
         if not target_section:
-            all_errors.append({
-                "where": "Section 1 - ITSAR Section No & Name",
-                "what": "missing section. in Section 1 - ITSAR Section No & Name",
-                "suggestion": "Add Section 1 (ITSAR Section No & Name) to the document",
-                "redirect_text": "Sections > Missing Section 1"
+             all_errors.append({
+                "where": "Section 1",
+                "what": "Section 1 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
             })
-        else:
-            section_id = target_section.get('section_id', 'Unknown')
-            actual_title = target_section.get('title', '').strip()
-            # Normalize title for comparison (remove trailing colon if present)
-            clean_title = actual_title.rstrip(':').strip()
-            
-            expected_title = "1. ITSAR Section No & Name"
-            
-            if clean_title != expected_title:
-                all_errors.append({
-                    "where": "Section 1 - ITSAR Section No & Name",
-                    "what": f"Incorrect title: Found '{actual_title}'",
-                    "suggestion": f"Change title to exactly '{expected_title}'",
-                    "redirect_text": f"{actual_title}"
-                })
+             output_result(all_errors, 0)
 
-            has_valid_content = False
-            items_checked = []
-            
-            # Check content in 'itsar_section_details' or 'content'
-            # Priority to 'itsar_section_details' if structured extraction worked
-            
-            content_sources = []
-            if 'itsar_section_details' in target_section:
-                details = target_section['itsar_section_details']
-                if isinstance(details, list):
-                    content_sources.extend(details)
-            
-            if 'content' in target_section:
-                content = target_section['content']
-                if isinstance(content, list):
-                     content_sources.extend(content)
+        # STRICT TITLE VALIDATION (BLOCKING)
+        found_title = target_section.get('title', '').strip()
+        # It MUST start with "1." and contain "ITSAR" AND "Section No & Name" (case-insensitive)
+        # This rejects incomplete titles like "1. ITSAR"
+        title_lower = found_title.lower()
+        if not (found_title.startswith("1.") and "itsar" in title_lower and "section no & name" in title_lower):
+             all_errors.append({
+                "where": found_title if found_title else "Section 1",
+                "what": "Section 1 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
+            })
+             # BLOCKING - Return immediately
+             output_result(all_errors, 0)
 
-            for item in content_sources:
-                text = ""
-                if isinstance(item, str):
-                    text = item
-                elif isinstance(item, dict):
-                    text = item.get('text', '') or item.get('section_detail', '')
-                
-                text = text.strip()
-                if not text: continue
-                
-                # Ignore placeholders
-                if text.lower() in ['none', 'n/a', 'nil', '.', '-', '_', '...']:
-                    continue
-                
-                items_checked.append(text)
-                
-                if is_valid_sentence(text):
-                    has_valid_content = True
-                    break
-            
-            if not has_valid_content:
-                if items_checked:
-                    # Found content but it was invalid (too short)
-                    invalid_text = items_checked[0]
-                    short_text = (invalid_text[:50] + '...') if len(invalid_text) > 50 else invalid_text
-                    all_errors.append({
-                        "where": "Section 1 - ITSAR Section No & Name",
-                        "what": f"Content not valid (too brief). Found: '{short_text}'",
-                        "suggestion": "Replace with complete descriptive sentence for ITSAR Section No & Name",
-                        "redirect_text": f"{actual_title}"
-                    })
-                else:
-                    # No content found at all
-                    all_errors.append({
-                        "where": "Section 1 - ITSAR Section No & Name",
-                        "what": f"Content missing: Add a description of the ITSAR Section in {actual_title}",
-                        "suggestion": "Add section content details",
-                        "redirect_text": f"{actual_title}"
-                    })
+        # 2. CONTENT VALIDATION (Only reached if Title is valid)
+        has_valid_content = False
+        found_text_sample = ""
+        
+        def is_valid_content(t):
+            t_clean = str(t).strip()
+            if not t_clean: return False
+            # Reject only specific placeholders
+            if t_clean.lower() in ['none', 'n/a', 'nil', '.', '-', '_', '...', '']:
+                return False
+            # Accept any other content, even single letters
+            return True
 
-        if all_errors:
-            print(json.dumps(all_errors, indent=4))
-            with open('output.json', 'w', encoding='utf-8') as f:
-                json.dump(all_errors, f, indent=4)
-            sys.exit(1)
-        else:
-            # If valid, print empty list or nothing? User prompt implies checking output.
-            # "returns a list of errors or None" in user code. 
-            # I will print [] if valid to be explicit.
-            print("[]")
-            with open('output.json', 'w', encoding='utf-8') as f:
-                json.dump([], f, indent=4)
-            sys.exit(0)
+        # Check all possible content fields
+        content_sources = []
+        if 'itsar_section_details' in target_section:
+            details = target_section['itsar_section_details']
+            if isinstance(details, list): content_sources.extend(details)
+            elif isinstance(details, str): content_sources.append(details)
+            
+        if 'content' in target_section:
+            content = target_section['content']
+            if isinstance(content, list): content_sources.extend(content)
+            elif isinstance(content, str): content_sources.append(content)
+
+        for item in content_sources:
+            text = ""
+            if isinstance(item, str): text = item
+            elif isinstance(item, dict): text = item.get('text', '') or item.get('section_detail', '')
+            
+            if is_valid_content(text):
+                has_valid_content = True
+                found_text_sample = text
+                break
+            elif text and not found_text_sample:
+                 found_text_sample = text
+        
+        if not has_valid_content:
+            all_errors.append({
+                "where": found_title,
+                "what": f"content missing. Found: '{found_text_sample}'",
+                "suggestion": "Provide the ITSAR section number and name details.",
+                "redirect_text": stable_redirect,
+                "severity": "High"
+            })
+
+        output_result(all_errors, 0)
 
     except json.JSONDecodeError:
-        print(json.dumps([{
+        output_result([{
             "where": "Section 1 - ITSAR Section No & Name",
             "what": "Failed to decode JSON",
             "suggestion": "Ensure the JSON file is valid"
-        }], indent=4))
-        sys.exit(1)
+        }], 1)
     except Exception as e:
-        print(json.dumps([{
+        output_result([{
             "where": "Section 1 - ITSAR Section No & Name",
             "what": f"Error: {str(e)}",
             "suggestion": "Check the file path and JSON structure"
-        }], indent=4))
-        sys.exit(1)
+        }], 1)
 
 if __name__ == "__main__":
     main()

@@ -1,14 +1,23 @@
 [
     {
-        "where": "Section 8.3 - Tools Required",
-        "what": "Incorrect title: Found '8.3. Tools Requid'",
-        "suggestion": "Change title to exactly '8.3. Tools Required'",
-        "redirect_text": "8.3. Tools Requid"
+        "where": "Section 8.3 - Tools Required - v5.9.4",
+        "what": "Tool name missing: Found 'v5.9.4' in Section 8.3 Tools Required",
+        "suggestion": "Expected: '[Tool Name] v5.9.4'",
+        "redirect_text": "Tools Required",
+        "severity": "high"
     },
     {
-        "where": "Section 8.3 - Tools Required",
-        "what": "Tool version missing or invalid format: 'Wireshark v ()'",
-        "suggestion": "Ensure format includes version checks (e.g., v7.95.0 or v (0.83))",
-        "redirect_text": "8.3. Tools Requid"
+        "where": "Section 8.3 - Tools Required - Nmap v",
+        "what": "Version number missing: Found 'Nmap v' in Section 8.3 Tools Required",
+        "suggestion": "Expected: 'Nmap v (Version Number)'",
+        "redirect_text": "Tools Required",
+        "severity": "medium"
+    },
+    {
+        "where": "Section 8.3 - Tools Required - Firefox 136.0.4",
+        "what": "Version identifier 'v' missing: Found 'Firefox 136.0.4' in Section 8.3 Tools Required",
+        "suggestion": "Expected: 'Firefox v 136.0.4'",
+        "redirect_text": "Tools Required",
+        "severity": "medium"
     }
 ]

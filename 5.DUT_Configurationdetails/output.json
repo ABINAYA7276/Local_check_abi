@@ -1,14 +1,9 @@
 [
     {
-        "where": "Section 5 - DUT Configuration",
-        "what": "Incorrect title: Found '5. DUT Configur:'",
-        "suggestion": "Change title to exactly '5. DUT Configuration:'",
-        "redirect_text": "5. DUT Configur:"
-    },
-    {
-        "where": "Section 5 - DUT Configuration",
-        "what": "Content missing",
-        "suggestion": "Add credentials and services details",
-        "redirect_text": "5. DUT Configur:"
+        "where": "5. DUT Configuration:",
+        "what": "content missing. Found: '.'",
+        "suggestion": "Provide the DUT configuration details.",
+        "redirect_text": "DUT Configuration:",
+        "severity": "High"
     }
 ]

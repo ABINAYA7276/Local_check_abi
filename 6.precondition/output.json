@@ -1,14 +1,9 @@
 [
     {
-        "where": "Section 6 - Preconditions",
-        "what": "Incorrect title: Found '7. Preconditio:'",
-        "suggestion": "Change title to exactly '6. Preconditions'",
-        "redirect_text": "7. Preconditio:"
-    },
-    {
-        "where": "Section 6 - Preconditions",
-        "what": "Preconditions content is missing or non-descriptive",
-        "suggestion": "Add meaningful test preconditions",
-        "redirect_text": "7. Preconditio:"
+        "where": "6. Preconditions",
+        "what": "content missing. Found: '.'",
+        "suggestion": "Provide the preconditions details.",
+        "redirect_text": "Preconditions",
+        "severity": "High"
     }
 ]

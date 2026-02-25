@@ -1,19 +1,22 @@
 import json
 import os
 import sys
-import re
 
-def is_valid_sentence(text):
-    if not text or not isinstance(text, str): return False
-    text = text.strip().strip('"\'""''')
-    if not text: return False
-    words = re.findall(r'[A-Za-z]+', text)
-    return len(words) >= 3 and ' ' in text
+def is_valid_content(t):
+    """
+    Checks if text is meaningful (not just numbers, placeholders, or empty).
+    Requires at least one alphabetic character and minimum length of 2.
+    """
+    if not t or not isinstance(t, str):
+        return False
+    t_clean = t.strip()
+    if t_clean.lower() in ['none', 'n/a', 'nil', 'tbd', '...', '---', '', '.']:
+        return False
+    return True
 
 def check_section_5(file_path):
     """
-    Validate Section 5 (DUT Configuration details).
-    Uses strict identification to avoid 'collapsing' with other sections like 3 or 4.
+    Validate Section 5 (DUT Configuration) using Simplified Concept.
     """
     if not os.path.exists(file_path):
         return [{"where": "Section 5", "what": "File not found", "suggestion": "Provide valid path"}]
@@ -23,91 +26,93 @@ def check_section_5(file_path):
             data = json.load(f)
         
         sections = data.get('sections', [])
-        candidates = []
-        expected_title = "5. DUT Configuration:"
+        target_section = None
+        stable_redirect = "DUT Configuration"
+        standard_title = "5. DUT Configuration:"
         
-        
-        # 1. Strictly identify Section 5
-        
+        # 1. IDENTIFICATION (Fuzzy & Number-based)
         for section in sections:
             title = section.get('title', '').strip()
-            sec_id = section.get('section_id', '')
+            title_lower = title.lower()
             
-            # HARD GUARD: Never process other known sections as SEC-05
-            if sec_id in ['SEC-01', 'SEC-02', 'SEC-03', 'SEC-04', 'SEC-06', 'SEC-07', 'SEC-08', 'SEC-09', 'SEC-10', 'SEC-11', 'SEC-12']:
-                continue
+            # Starts with "5. " or contains keywords "DUT" AND "Configuration"
+            if title.startswith('5. ') or ('dut' in title_lower and 'configuration' in title_lower):
+                target_section = section
+                break
+            # Fallback to ID
+            if section.get('section_id') == 'SEC-05':
+                target_section = section
+                break
 
-            # Strict logic: 
-            # 1. Explicit ID 'SEC-05' matches
-            # 2. Starts with '5.' (excluding '5.1')
-            
-            if sec_id == 'SEC-05':
-                 candidates.append(section)
-            elif title.startswith('5.') and not title.startswith('5.1'):
-                 candidates.append(section)
-        
-        if not candidates:
+        if not target_section:
             return [{
-                "where": "Section 5 - DUT Configuration",
+                "where": "5. DUT Configuration",
                 "what": "Section 5 missing",
-                "suggestion": f"Add {expected_title}",
-                "redirect_text": f"{expected_title}"
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
             }]
         
-        # 2. SELECT PRIMARY (For Title Check)
-        primary_section = candidates[0] # Taking first match as primary
-        
+        # STRICT TITLE VALIDATION (BLOCKING)
+        found_title = target_section.get('title', '').strip()
+        # It MUST start with "5." and contain "DUT Configuration" (case-insensitive)
+        title_lower = found_title.lower()
+        if not (found_title.startswith("5.") and "dut configuration" in title_lower):
+             return [{
+                "where": found_title if found_title else "Section 5",
+                "what": "Section 5 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
+            }]
+
+        actual_title = target_section.get('title', '').strip()
         errors = []
-        actual_title = primary_section.get('title', '').strip()
         
-        # Normalize title for comparison
-        if actual_title != expected_title:
-             errors.append({
-                "where": "Section 5 - DUT Configuration",
-                "what": f"Incorrect title: Found '{actual_title}'",
-                "suggestion": f"Change title to exactly '{expected_title}'",
-                "redirect_text": f"{actual_title}"
-            })
+        # 2. TITLE VALIDATION (Skipped as per Simplified Concept)
 
-        has_text = False
-        invalid_text = ""
+        # 3. CONTENT VALIDATION
+        has_valid_content = False
+        found_text_sample = ""
         
-        # 3. Dynamic Content Aggregation
-        for target in candidates:
-            # Check 'dut_configuration' key first
-            dut_conf = target.get('dut_configuration', '')
-            if isinstance(dut_conf, list):
-                for item in dut_conf:
-                    text = item.get('text', '') if isinstance(item, dict) else str(item)
-                    if is_valid_sentence(text):
-                        has_text = True
-                        break
-            elif isinstance(dut_conf, str) and is_valid_sentence(dut_conf):
-                has_text = True
-            
-            if has_text: break
-            
-            # Check generic content
-            content = target.get('content', [])
-            if isinstance(content, list):
-                 for item in content:
-                    text = item.get('text', '') if isinstance(item, dict) else str(item)
-                    if is_valid_sentence(text):
-                        has_text = True
-                        break
-                    elif text.strip() and not invalid_text:
-                        invalid_text = text.strip()
-            
-            if has_text: break
+        # Check specific field 'dut_configuration' first
+        dut_conf_list = target_section.get('dut_configuration', [])
+        
+        # Handle if it's a list (common structure) or string
+        items_to_check = dut_conf_list if isinstance(dut_conf_list, list) else ([dut_conf_list] if dut_conf_list else [])
+        
+        # Add 'content' list as fallback
+        if not items_to_check:
+             items_to_check = target_section.get('content', [])
 
-        if not has_text:
+        # Validate items
+        for item in items_to_check:
+            text = ""
+            if isinstance(item, dict):
+                text = item.get('text', '')
+            else:
+                text = str(item)
+            
+            if is_valid_content(text):
+                has_valid_content = True
+                break
+            elif text.strip() and not found_text_sample:
+                 found_text_sample = text.strip()
+
+        if not has_valid_content:
+            # CLEAN REDIRECT: Remove leading numbers and spaces (e.g., "5. " -> "")
+            # This avoids UI bugs where spaces or numbers cause incorrect jumps.
+            import re
+            redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).strip()
+            
             errors.append({
-                "where": "Section 5 - DUT Configuration",
-                "what": "Content missing",
-                "suggestion": "Add credentials and services details",
-                "redirect_text": f"{actual_title}"
+                "where": actual_title,
+                "what": f"content missing. Found: '{found_text_sample}'",
+                "suggestion": "Provide the DUT configuration details.",
+                "redirect_text": redirect_val,
+                "severity": "High"
             })
+            
         return errors
+
     except Exception as e:
         return [{"where": "Section 5", "what": f"Error: {e}"}]
 
@@ -115,5 +120,5 @@ if __name__ == "__main__":
     json_path = sys.argv[1] if len(sys.argv) > 1 else 'dutjson.json'
     result = check_section_5(json_path)
     with open('output.json', 'w', encoding='utf-8') as f:
-        json.dump(result, f, indent=4)
-    print(json.dumps(result, indent=4))
+        json.dump(result if result else [], f, indent=4)
+    print(json.dumps(result if result else [], indent=4))

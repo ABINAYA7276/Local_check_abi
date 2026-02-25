@@ -1,14 +1,16 @@
 [
     {
-        "where": "Section 4 - DUT Confirmation Details",
-        "what": "Incorrect title: Found '5. 8.DUT Confirmation Det'",
-        "suggestion": "Change title to exactly '4. DUT Confirmation Details'",
-        "redirect_text": "5. 8.DUT Confirmation Det"
+        "where": "4. DUT Confirmation Details",
+        "what": "Missing table header at Column 1",
+        "suggestion": "Provide the correct header: 'Interfaces'",
+        "redirect_text": "DUT Interface Status details",
+        "severity": "Medium"
     },
     {
-        "where": "Section 4 - DUT Confirmation Details",
-        "what": "Missing value(s) in Row 1: Interface Type",
-        "suggestion": "Provide values for: Interface Type",
-        "redirect_text": "DUT Interface Status details"
+        "where": "4. DUT Confirmation Details",
+        "what": "Missing value in Row 1, Column 'No.of Ports'",
+        "suggestion": "Provide the 'No.of Ports' details.",
+        "redirect_text": "DUT Interface Status details",
+        "severity": "Medium"
     }
 ]

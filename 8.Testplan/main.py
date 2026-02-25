@@ -15,68 +15,62 @@ def check_section_8(file_path):
     Validate Section 8 (Test Plan).
     """
     if not os.path.exists(file_path):
-        return [{"where": "Section 8", "what": "File not found", "suggestion": "Provide a valid JSON file path"}]
+        return [{"where": "Section 8 - Test Plan", "what": "File not found", "suggestion": "Provide a valid JSON file path", "severity": "high"}]
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         sections = data.get('sections', [])
-        errors = []
-        target_sections = []
+        all_errors_table = []
+        target_section = None
         expected_title = "8. Test Plan"
 
+        # 1. Robust Section Discovery
         for section in sections:
             title = section.get('title', '').strip()
-            sec_id = section.get('section_id', '')
+            title_lower = title.lower()
             
-            # HARD GUARD: Never process other known sections
-            if sec_id in ['SEC-01', 'SEC-02', 'SEC-03', 'SEC-04', 'SEC-05', 'SEC-06', 'SEC-07', 'SEC-09', 'SEC-10', 'SEC-11', 'SEC-12']:
-                continue
+            # Match if contains "8" and "test"
+            if "8" in title_lower and "test" in title_lower:
+                # Strictly exclude subsections like 8.1, 8.2, 8.4, 81.1 etc.
+                # If there's a digit immediately following the 8. (e.g. 8.1), it's a subsection.
+                if re.search(r'^8\.\d+', title) or re.search(r'^\d+\.\d+(\.\d+)?', title):
+                    # But if it's JUST "8." or "8. Test Plan", keep it.
+                    # We check if the pattern is specifically a subsection pattern.
+                    if re.match(r'^\d+\.\d+(\.\d+)?$', title.split(':')[0].strip()):
+                         continue
 
-            # Strict logic: 
-            # 1. Explicit ID matches
-            if sec_id == 'SEC-08':
-                 target_sections.append(section)
-                 continue
-            
-            # 2. Starts with '8.' (excluding subsections like '8.1') 
-            if title.startswith('8.') and not title.startswith('8.1'):
-                 target_sections.append(section)
+                target_section = section
+                break
 
-        if not target_sections:
+        if not target_section:
             return [{
-                "where": "Section 8 - Test Plan",
+                "where": expected_title,
                 "what": "Section 8 missing",
                 "suggestion": f"Add {expected_title}",
-                "redirect_text": f"{expected_title}"
+                "severity": "high"
             }]
 
-        # Use the first valid candidate as primary
-        primary_section = target_sections[0]
-        actual_title = primary_section.get('title', '').strip()
-        display_title = actual_title if actual_title else "[Empty]"
-        section_ref = "Section 8 - Test Plan"
+        actual_title = target_section.get('title', '').strip()
+        # Clean redirect title (remove leading numbers)
+        redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).strip()
         
-        # Normalization: Remove trailing colon for comparison
-        norm_actual = actual_title.rstrip(':').strip()
-        norm_expected = expected_title.rstrip(':').strip()
-
-        if norm_actual != norm_expected:
-            errors.append({
-                "where": section_ref,
-                "what": f"Incorrect title: Found '{actual_title}'",
-                "suggestion": f"Change title to exactly '{expected_title}'",
-                "redirect_text": f"{actual_title}"
-            })
-
-        # Content Check
-        content = primary_section.get('content', [])
+        # Title Validation - STOP if wrong
+        if actual_title.replace(':', '').strip().lower() != expected_title.replace(':', '').strip().lower():
+             return [{
+                "where": expected_title,
+                "what": "Section 8 missing",
+                "suggestion": f"Add {expected_title}",
+                "severity": "high"
+            }]
+        else:
+            # Content Check
+            content = target_section.get('content', [])
         has_meaningful = False
         
-        # Also check 'test_plan' field if it exists
-        if 'test_plan' in primary_section:
-             plan_text = primary_section['test_plan']
+        if 'test_plan' in target_section:
+             plan_text = target_section['test_plan']
              if isinstance(plan_text, str) and is_meaningful_content(plan_text):
                  has_meaningful = True
         
@@ -88,21 +82,50 @@ def check_section_8(file_path):
                     break
 
         if not has_meaningful:
-           errors.append({
-               "where": section_ref, 
+           all_errors_table.append({
+               "where": expected_title, 
                "what": "Test Plan content is missing or non-descriptive", 
                "suggestion": "Add test plan introductory content", 
-               "redirect_text": f"{actual_title}"
+               "redirect_text": redirect_title,
+               "severity": "high"
            })
         
-        return errors if errors else None
+        # Final Processing: Sort findings by severity: high > medium > low
+        findings = []
+        if all_errors_table:
+            severity_priority = {"high": 0, "medium": 1, "low": 2}
+            all_errors_table.sort(key=lambda x: severity_priority.get(x.get('severity', 'medium'), 1))
+            
+            for error in all_errors_table:
+                findings.append({
+                    "where": error['where'],
+                    "what": error['what'],
+                    "suggestion": error['suggestion'],
+                    "redirect_text": error.get('redirect_text', ''),
+                    "severity": error.get('severity', 'medium')
+                })
+
+        return findings if findings else None
 
     except Exception as e:
-        return [{"where": "Section 8", "what": f"Error: {e}", "suggestion": "Check file structure"}]
+        return [{"where": "Section 8 Processing", "what": f"Error: {e}", "suggestion": "Check file structure", "severity": "high"}]
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    
     json_path = sys.argv[1] if len(sys.argv) > 1 else 'dutjson.json'
     result = check_section_8(json_path)
-    with open('output.json', 'w', encoding='utf-8') as f:
-        json.dump(result if result else [], f, indent=4)
-    if result: print(json.dumps(result, indent=4))
+    
+    # Always save to output.json
+    try:
+        with open('output.json', 'w', encoding='utf-8') as f:
+            json.dump(result if result else [], f, indent=4)
+    except:
+        pass
+        
+    if result:
+        print(json.dumps(result, indent=4))
+        sys.exit(1)
+    else:
+        sys.exit(0)

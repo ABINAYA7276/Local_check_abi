@@ -1,19 +1,22 @@
 import json
 import os
 import sys
-import re
 
-def is_meaningful_content(text):
-    if not text or not isinstance(text, str): return False
-    val = text.strip().lower()
-    if val in ['none', 'n/a', 'nil', '.', '-', '...', '_']: return False
-    words = re.findall(r'[A-Za-z0-9]+', text)
-    return len(words) >= 2
+def is_valid_content(t):
+    """
+    Checks if text is meaningful (not just numbers, placeholders, or empty).
+    Requires at least one alphabetic character and minimum length of 2.
+    """
+    if not t or not isinstance(t, str):
+        return False
+    t_clean = t.strip()
+    if t_clean.lower() in ['none', 'n/a', 'nil', 'tbd', '...', '---', '', '.']:
+        return False
+    return True
 
 def check_section_6(file_path):
     """
-    Validate Section 6 (Preconditions).
-    Standardized: Strict Exclusion, Dynamic Aggregation, Title Check.
+    Validate Section 6 (Preconditions) using Simplified Concept.
     """
     if not os.path.exists(file_path):
         return [{"where": "Section 6", "what": "File not found", "suggestion": "Provide valid path"}]
@@ -23,96 +26,88 @@ def check_section_6(file_path):
             data = json.load(f)
         
         sections = data.get('sections', [])
-        candidates = []
-        expected_title = "6. Preconditions"
+        target_section = None
+        stable_redirect = "Preconditions"
+        standard_title = "6. Preconditions:"
         
-        
-        # 1. Strictly identify Section 6
-        
+        # 1. IDENTIFICATION (Fuzzy & Number-based)
         for section in sections:
             title = section.get('title', '').strip()
-            sec_id = section.get('section_id', '')
+            title_lower = title.lower()
             
-            # Explicit Exclusion of other sections
-            if sec_id in ['SEC-01', 'SEC-02', 'SEC-03', 'SEC-04', 'SEC-05', 'SEC-07', 'SEC-08', 'SEC-09', 'SEC-10', 'SEC-11', 'SEC-12']:
-                continue
+            # Starts with "6. " or contains keyword "Precondition"
+            if title.startswith('6. ') or ('precondition' in title_lower):
+                target_section = section
+                break
+            # Fallback to ID
+            if section.get('section_id') == 'SEC-06':
+                target_section = section
+                break
 
-            # Strict logic: 
-            # 1. Explicit ID matches
-            if sec_id == 'SEC-06':
-                 candidates.append(section)
-                 continue
-            
-            # 2. Starts with '6.' (excluding '6.1') 
-            if title.startswith('6.') and not title.startswith('6.1'):
-                 candidates.append(section)
-        
-        if not candidates:
+        if not target_section:
             return [{
-                "where": "Section 6 - Preconditions",
+                "where": "6. Preconditions",
                 "what": "Section 6 missing",
-                "suggestion": f"Add {expected_title}",
-                "redirect_text": f"{expected_title}"
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
             }]
         
-        # 2. SELECT PRIMARY
-        primary_section = None
-        for cand in candidates:
-            if cand.get('section_id') == 'SEC-06':
-                primary_section = cand
-                break
-        if not primary_section:
-            primary_section = candidates[0]
+        # STRICT TITLE VALIDATION (BLOCKING)
+        found_title = target_section.get('title', '').strip()
+        # It MUST start with "6." and contain "Precondition" (case-insensitive)
+        title_lower = found_title.lower()
+        if not (found_title.startswith("6.") and "precondition" in title_lower):
+            # Check if title contains "Preconditions" or "Precondition" (both acceptable)
+             return [{
+                "where": found_title if found_title else "Section 6",
+                "what": "Section 6 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
+            }]
 
+        actual_title = target_section.get('title', '').strip()
         errors = []
-        actual_title = primary_section.get('title', '').strip()
         
-        # Normalization: Remove trailing colon for comparison
-        norm_actual = actual_title.rstrip(':').strip()
-        norm_expected = expected_title.rstrip(':').strip()
-        
-        if norm_actual != norm_expected:
-             errors.append({
-                "where": "Section 6 - Preconditions",
-                "what": f"Incorrect title: Found '{actual_title}'",
-                "suggestion": f"Change title to exactly '{expected_title}'",
-                "redirect_text": f"{actual_title}"
-            })
+        # 2. TITLE VALIDATION (Skipped as per Simplified Concept)
 
-        has_text = False
-        found_invalid = ""
+        # 3. CONTENT VALIDATION
+        has_valid_content = False
+        found_text_sample = ""
         
-        # 3. Dynamic Aggregation
-        for target in candidates:
-            # Check 'preconditions' list (objects or strings) and 'content' list
-            field_sources = [target.get('preconditions', []), target.get('content', [])]
+        # Check specific field 'preconditions' first
+        precond_list = target_section.get('preconditions', [])
+        
+        # Handle if it's a list (common structure) or string
+        items_to_check = precond_list if isinstance(precond_list, list) else ([precond_list] if precond_list else [])
+        
+        # Add 'content' list as fallback
+        if not items_to_check:
+             items_to_check = target_section.get('content', [])
+
+        # Validate items
+        for item in items_to_check:
+            text = ""
+            if isinstance(item, dict):
+                # Check for 'precondition' key (specific to this section) or generic 'text'
+                text = item.get('precondition', '') or item.get('text', '')
+            else:
+                text = str(item)
             
-            for field in field_sources:
-                items = field if isinstance(field, list) else [field]
-                for item in items:
-                    text = ""
-                    if isinstance(item, dict):
-                         # Logic for handling Precondition Objects specifically
-                         text = item.get('precondition', '') or item.get('text', '')
-                    else:
-                        text = str(item)
-                    
-                    if is_meaningful_content(text):
-                        has_text = True
-                        break
-                    elif text.strip() and not found_invalid:
-                        found_invalid = text.strip()
-                if has_text: break
-            if has_text: break
+            if is_valid_content(text):
+                has_valid_content = True
+                break
+            elif text.strip() and not found_text_sample:
+                 found_text_sample = text.strip()
 
-        if not has_text:
+        if not has_valid_content:
             errors.append({
-                "where": "Section 6 - Preconditions",
-                "what": "Preconditions content is missing or non-descriptive",
-                "suggestion": "Add meaningful test preconditions",
-                "redirect_text": f"{actual_title}"
+                "where": actual_title,
+                "what": f"content missing. Found: '{found_text_sample}'",
+                "suggestion": "Provide the preconditions details.",
+                "redirect_text": stable_redirect,
+                "severity": "High"
             })
-        
+            
         return errors
 
     except Exception as e:

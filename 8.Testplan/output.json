@@ -1,14 +1,9 @@
 [
     {
-        "where": "Section 8 - Test Plan",
-        "what": "Incorrect title: Found '0. Test Pan'",
-        "suggestion": "Change title to exactly '8. Test Plan'",
-        "redirect_text": "0. Test Pan"
-    },
-    {
-        "where": "Section 8 - Test Plan",
+        "where": "8. Test Plan",
         "what": "Test Plan content is missing or non-descriptive",
         "suggestion": "Add test plan introductory content",
-        "redirect_text": "0. Test Pan"
+        "redirect_text": "Test Plan",
+        "severity": "high"
     }
 ]

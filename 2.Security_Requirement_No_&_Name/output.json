@@ -1,0 +1,9 @@
+[
+    {
+        "where": "2. Security Requirement No & Name",
+        "what": "content missing. Found: ''",
+        "suggestion": "Provide the security requirement number and name details.",
+        "redirect_text": "Security Requirement No & Name",
+        "severity": "High"
+    }
+]

@@ -24,83 +24,86 @@ def check_section_2(file_path):
             data = json.load(f)
         
         sections = data.get('sections', [])
-        candidates = []
-        expected_title = "2. Security Requirement No & Name"
+        target_section = None
+        standard_title = "2. Security Requirement No & Name"
+        stable_redirect = "Security Requirement No & Name"
         
-        # 1. Strictly identify Section 2
-        
+        # 1. Identification (Silent Search)
         for section in sections:
             title = section.get('title', '').strip()
-            sec_id = section.get('section_id', '')
-            
-            # Strict logic: 
-            # 1. Explicit ID matches
-            if sec_id == 'SEC-02':
-                 candidates.append(section)
-                 continue
-            
-            # 2. Starts with '2.' (excluding '2.1') 
-            # AND strictly ensure it's not another known section ID mislabeled
-            if title.startswith('2.') and not title.startswith('2.1'):
-                 if sec_id not in ['SEC-01', 'SEC-03', 'SEC-04', 'SEC-05', 'SEC-06', 'SEC-07', 'SEC-08', 'SEC-09', 'SEC-10', 'SEC-11', 'SEC-12']:
-                     candidates.append(section)
-        
-        if not candidates:
+            title_lower = title.lower()
+            # Strict Search: Matches "2. " (with space) or titles containing 'security requirement'
+            if title.startswith('2. ') or 'security requirement' in title_lower:
+                target_section = section
+                break
+            if section.get('section_id') == 'SEC-02':
+                target_section = section
+                break
+
+        if not target_section:
             return [{
-                "where": "Section 2 - Security Requirement No & Name",
+                "where": standard_title,
                 "what": "Section 2 missing",
-                "suggestion": f"Add {expected_title}",
-                "redirect_text": f"{expected_title}"
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
             }]
-        
-        # 2. SELECT PRIMARY (For Title Check)
-        primary_section = candidates[0] # Taking first match as primary
+
+        # STRICT TITLE VALIDATION (BLOCKING)
+        found_title = target_section.get('title', '').strip()
+        # It MUST start with "2." and contain "Security Requirement No & Name" (case-insensitive)
+        title_lower = found_title.lower()
+        if not (found_title.startswith("2.") and "security requirement" in title_lower and "no & name" in title_lower):
+             return [{
+                "where": found_title if found_title else "Section 2",
+                "what": "Section 2 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
+            }]
 
         errors = []
-        actual_title = primary_section.get('title', '').strip()
+        has_valid_content = False
+        found_text_sample = ""
         
-        # Normalize title for comparison (remove trailing colon if present)
-        clean_title = actual_title.rstrip(':').strip()
-        
-        if clean_title != expected_title:
-             errors.append({
-                "where": "Section 2 - Security Requirement No & Name",
-                "what": f"Incorrect title: Found '{actual_title}'",
-                "suggestion": f"Change title to exactly '{expected_title}'",
-                "redirect_text": re.sub(r'^[\d\.]+\s*', '', actual_title).strip()
-            })
-        
-        has_text = False
-        found_invalid = ""
-        
-        # 3. Dynamic Content Aggregation
-        for target in candidates:
-            # Check 'security_requirement' key first (from structured extraction)
-            sec_req = target.get('security_requirement', '')
-            if isinstance(sec_req, str) and is_meaningful_content(sec_req):
-                has_text = True
-                break
-            
-            # Check generic content
-            content = target.get('content', [])
-            if isinstance(content, list):
-                 for item in content:
-                    text = item.get('text', '') if isinstance(item, dict) else str(item)
-                    if is_meaningful_content(text):
-                        has_text = True
-                        break
-                    elif text.strip() and not found_invalid:
-                        found_invalid = text.strip()
-            
-            if has_text: break
+        # Helper to check if text is valid (requires letters)
+        def is_valid_content(t):
+            t_clean = str(t).strip()
+            if not t_clean: return False
+            # Reject placeholders
+            if t_clean.lower() in ['none', 'n/a', 'nil', '.', '-', '_', '...', '']:
+                return False
+            # Accept any other content
+            return True
 
-        if not has_text:
-            text_desc = f": Found '{found_invalid}'" if found_invalid else ""
+        # Check all possible content fields
+        content_sources = []
+        # Support both 'security_requirement' and 'content' fields
+        sec_req = target_section.get('security_requirement', '')
+        if sec_req: content_sources.append(sec_req)
+        
+        content = target_section.get('content', [])
+        if isinstance(content, list): content_sources.extend(content)
+
+        for item in content_sources:
+            text = ""
+            if isinstance(item, str): text = item
+            elif isinstance(item, dict): text = item.get('text', '') or item.get('security_requirement', '')
+            
+            text = text.strip()
+            if text:
+                if not found_text_sample:
+                    found_text_sample = text
+                if is_valid_content(text):
+                    has_valid_content = True
+                    found_text_sample = text
+                    break
+        
+        if not has_valid_content:
             errors.append({
-                "where": "Section 2 - Security Requirement No & Name",
-                "what": f"Security requirement content is missing{text_desc}",
-                "suggestion": "Add specific security requirement name (e.g., Access and Authorization)",
-                "redirect_text": f"{actual_title}"
+                "where": standard_title,
+                "what": f"content missing. Found: '{found_text_sample}'",
+                "suggestion": "Provide the security requirement number and name details.",
+                "redirect_text": stable_redirect,
+                "severity": "High"
             })
             
         return errors
