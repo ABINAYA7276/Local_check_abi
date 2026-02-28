@@ -49,6 +49,7 @@ def check_section_6(file_path):
                 "where": "6. Preconditions",
                 "what": "Section 6 missing",
                 "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
                 "severity": "High"
             }]
         
@@ -57,18 +58,20 @@ def check_section_6(file_path):
         # It MUST start with "6." and contain "Precondition" (case-insensitive)
         title_lower = found_title.lower()
         if not (found_title.startswith("6.") and "precondition" in title_lower):
-            # Check if title contains "Preconditions" or "Precondition" (both acceptable)
              return [{
                 "where": found_title if found_title else "Section 6",
                 "what": "Section 6 missing",
                 "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
                 "severity": "High"
             }]
 
-        actual_title = target_section.get('title', '').strip()
+        actual_title = found_title
         errors = []
         
-        # 2. TITLE VALIDATION (Skipped as per Simplified Concept)
+        import re
+        # Clean redirect: Remove leading numbers/dots and trailing colons
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
 
         # 3. CONTENT VALIDATION
         has_valid_content = False
@@ -88,8 +91,11 @@ def check_section_6(file_path):
         for item in items_to_check:
             text = ""
             if isinstance(item, dict):
+                # Images NO LONGER count as content per discussion
                 # Check for 'precondition' key (specific to this section) or generic 'text'
                 text = item.get('precondition', '') or item.get('text', '')
+            elif isinstance(item, list):
+                text = " ".join([str(i) for i in item if i])
             else:
                 text = str(item)
             
@@ -104,7 +110,7 @@ def check_section_6(file_path):
                 "where": actual_title,
                 "what": f"content missing. Found: '{found_text_sample}'",
                 "suggestion": "Provide the preconditions details.",
-                "redirect_text": stable_redirect,
+                "redirect_text": redirect_val,
                 "severity": "High"
             })
             

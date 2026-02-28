@@ -79,11 +79,18 @@ def check_section_3(file_path):
         
         # Check 'requirement_description' first
         req_desc = target_section.get('requirement_description', '')
-        if is_valid_content(req_desc):
+        
+        # Aggregate text if it's a list
+        if isinstance(req_desc, list):
+            req_desc_text = " ".join([str(i) for i in req_desc if i]).strip()
+        else:
+            req_desc_text = str(req_desc).strip()
+
+        if is_valid_content(req_desc_text):
             has_valid_content = True
         else:
-            if isinstance(req_desc, str) and req_desc.strip():
-                found_text_sample = req_desc.strip()
+            if req_desc_text:
+                found_text_sample = req_desc_text
 
         # Check generic 'content' or other fields if description empty
         if not has_valid_content:

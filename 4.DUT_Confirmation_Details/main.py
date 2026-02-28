@@ -35,6 +35,7 @@ def check_section_4(file_path):
                 "where": "4. DUT Confirmation Details",
                 "what": "Section 4 missing",
                 "suggestion": f"Expected: '4. DUT Confirmation Details'",
+                "redirect_text": "DUT Confirmation Details",
                 "severity": "High"
             }]
         
@@ -48,12 +49,16 @@ def check_section_4(file_path):
                 "where": found_title if found_title else "Section 4",
                 "what": "Section 4 missing",
                 "suggestion": f"Expected: '4. DUT Confirmation Details'",
+                "redirect_text": "DUT Confirmation Details",
                 "severity": "High"
             }]
 
         actual_title = found_title
         errors = []
         
+        import re
+        # Clean redirect: Remove leading numbers and trailing colons
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or "DUT Confirmation Details"
         
         # Helper to check meaningful text
         def is_valid_content(t):
@@ -69,20 +74,35 @@ def check_section_4(file_path):
         # Gather all text content
         if 'dut_details' in primary_section:
             details = primary_section['dut_details']
-            if isinstance(details, list): content_sources.extend(details)
-            elif isinstance(details, str): content_sources.append(details)
+            if isinstance(details, list):
+                # If it's a list of strings, combine them. 
+                # If it's a list of dicts (normal behavior), we'll handle that in the loop below.
+                if details and isinstance(details[0], str):
+                    content_sources.append(" ".join([str(i) for i in details if i]))
+                else:
+                    content_sources.extend(details)
+            else:
+                content_sources.append(str(details))
             
         if 'content' in primary_section:
             content = primary_section['content']
-            if isinstance(content, list): content_sources.extend(content)
-            elif isinstance(content, str): content_sources.append(content)
+            if isinstance(content, list):
+                if content and isinstance(content[0], str):
+                    content_sources.append(" ".join([str(i) for i in content if i]))
+                else:
+                    content_sources.extend(content)
+            else:
+                content_sources.append(str(content))
 
         found_text_sample = ""
         for item in content_sources:
             text = ""
             if isinstance(item, str): text = item
             elif isinstance(item, dict):
-                # Check text fields, ignore table structures for general content check
+                # Images NO LONGER count as content (Consistent with Section 5)
+                if item.get('type') == 'image' or item.get('image_path'):
+                    continue
+                # Ignore table structures for general content check
                 if item.get('type') != 'table':
                     text = item.get('text', '')
             
@@ -97,8 +117,7 @@ def check_section_4(file_path):
                 "where": actual_title,
                 "what": f"content missing. Found: '{found_text_sample}'",
                 "suggestion": "Provide the DUT confirmation details.",
-                # Content error -> Redirect to Main Section Header
-                "redirect_text": "DUT Confirmation Details",
+                "redirect_text": redirect_val,
                 "severity": "High"
             })
             # Do NOT return here. Continue to check the table.
@@ -143,7 +162,7 @@ def check_section_4(file_path):
                                         "where": actual_title,
                                         "what": f"Missing table header at Column {idx+1}",
                                         "suggestion": f"Provide the correct header: '{exp}'",
-                                        "redirect_text": stable_redirect,
+                                        "redirect_text": redirect_val,
                                         "severity": "Medium"
                                     })
                                 elif h_norm != exp_norm:
@@ -152,7 +171,7 @@ def check_section_4(file_path):
                                         "where": actual_title,
                                         "what": f"Incorrect table header found: '{h}'",
                                         "suggestion": f"Provide the correct header: '{exp}'",
-                                        "redirect_text": stable_redirect,
+                                        "redirect_text": redirect_val,
                                         "severity": "Medium"
                                     })
                             else:
@@ -161,7 +180,7 @@ def check_section_4(file_path):
                                     "where": actual_title,
                                     "what": f"Missing table header at Column {idx+1}",
                                     "suggestion": f"Provide the correct header: '{exp}'",
-                                    "redirect_text": stable_redirect,
+                                    "redirect_text": redirect_val,
                                     "severity": "Medium"
                                 })
                         
@@ -172,7 +191,7 @@ def check_section_4(file_path):
                                 "where": actual_title,
                                 "what": "Table content is empty",
                                 "suggestion": "Provide the DUT interface status details table content.",
-                                "redirect_text": stable_redirect,
+                                "redirect_text": redirect_val,
                                 "severity": "Medium"
                             })
                         else:
@@ -186,7 +205,7 @@ def check_section_4(file_path):
                                             "where": actual_title,
                                             "what": f"Missing value in Row {r_idx}, Column '{col_name}'",
                                             "suggestion": f"Provide the '{col_name}' details.",
-                                            "redirect_text": stable_redirect,
+                                            "redirect_text": redirect_val,
                                             "severity": "Medium"
                                         })
                         break 
@@ -197,7 +216,7 @@ def check_section_4(file_path):
                 "where": actual_title,
                 "what": "DUT Interface Status details table is missing",
                 "suggestion": "Provide the DUT interface status details table.",
-                "redirect_text": stable_redirect,
+                "redirect_text": redirect_val,
                 "severity": "Medium"
             })
 

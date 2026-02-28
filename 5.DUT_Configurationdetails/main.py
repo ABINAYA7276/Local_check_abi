@@ -49,6 +49,7 @@ def check_section_5(file_path):
                 "where": "5. DUT Configuration",
                 "what": "Section 5 missing",
                 "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
                 "severity": "High"
             }]
         
@@ -61,18 +62,21 @@ def check_section_5(file_path):
                 "where": found_title if found_title else "Section 5",
                 "what": "Section 5 missing",
                 "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
                 "severity": "High"
             }]
 
         actual_title = target_section.get('title', '').strip()
         errors = []
         
-        # 2. TITLE VALIDATION (Skipped as per Simplified Concept)
-
         # 3. CONTENT VALIDATION
         has_valid_content = False
         found_text_sample = ""
         
+        import re
+        # Clean redirect: Always remove leading numbers/dots and trailing colon
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
+
         # Check specific field 'dut_configuration' first
         dut_conf_list = target_section.get('dut_configuration', [])
         
@@ -87,7 +91,10 @@ def check_section_5(file_path):
         for item in items_to_check:
             text = ""
             if isinstance(item, dict):
+                # Images NO LONGER count as content per discussion
                 text = item.get('text', '')
+            elif isinstance(item, list):
+                text = " ".join([str(i) for i in item if i])
             else:
                 text = str(item)
             
@@ -98,11 +105,6 @@ def check_section_5(file_path):
                  found_text_sample = text.strip()
 
         if not has_valid_content:
-            # CLEAN REDIRECT: Remove leading numbers and spaces (e.g., "5. " -> "")
-            # This avoids UI bugs where spaces or numbers cause incorrect jumps.
-            import re
-            redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).strip()
-            
             errors.append({
                 "where": actual_title,
                 "what": f"content missing. Found: '{found_text_sample}'",

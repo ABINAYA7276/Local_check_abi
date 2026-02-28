@@ -169,18 +169,17 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict
 
 def check_figure_ids(itsar_details: List[str], expected_tc_number: str, test_id: str) -> List[Dict]:
     errors = []
-    # Match both captions like "Figure 11.1.1.1 - Title" and mentions like "(refer figure 11.1.1.1)"
-    figure_caption_pattern = re.compile(r'^[Ff]igure\s+([\d\.]+)\s*[-–:](.*)$', re.IGNORECASE)
-    figure_any_pattern = re.compile(r'[Ff]igure\s+([\d\.]+)', re.IGNORECASE)
+    # Match primary captions like "Figure 11.1.1.1 - Title"
+    # Matches: "Figure 11.1.2.1 - Title", "Figure 11.1.2.1: Title", "Figure 11.1.2.1 Title"
+    figure_caption_pattern = re.compile(r'^[Ff]igure\s+([\d\.]+)\s*[-–: ]\s*(.*)$', re.IGNORECASE)
     
     found_captions = []
-    all_mentions = []
     
     for detail in itsar_details:
         if not isinstance(detail, str): continue
         text = detail.strip()
         
-        # 1. Identify captions for sequence and title checking
+        # Identify captions for sequence and title checking
         cap_match = figure_caption_pattern.match(text)
         if cap_match:
             full_id = cap_match.group(1).strip('.')
@@ -192,11 +191,6 @@ def check_figure_ids(itsar_details: List[str], expected_tc_number: str, test_id:
                 'suffix': int(parts[-1]) if parts[-1].isdigit() else 0
             }
             found_captions.append(fig_data)
-        
-        # 2. Identify all mentions for alignment checking
-        mentions = figure_any_pattern.findall(text)
-        for m in mentions:
-            all_mentions.append(m.strip('.'))
     
     # Check captions sequentially
     expected_suffix = 1
@@ -204,6 +198,7 @@ def check_figure_ids(itsar_details: List[str], expected_tc_number: str, test_id:
         actual_id = fig['full_id']
         correct_id = f"{expected_tc_number}.{expected_suffix}"
         
+        # 1. Alignment Check
         if not actual_id.startswith(expected_tc_number):
             errors.append({
                 'type': 'figure_id', 
@@ -211,6 +206,7 @@ def check_figure_ids(itsar_details: List[str], expected_tc_number: str, test_id:
                 'suggestion': f"Expected to start with '{expected_tc_number}' (e.g. Figure {correct_id})", 
                 'severity': 'low'
             })
+        # 2. Sequence Check
         elif fig['suffix'] != expected_suffix:
             errors.append({
                 'type': 'figure_id', 
@@ -219,6 +215,7 @@ def check_figure_ids(itsar_details: List[str], expected_tc_number: str, test_id:
                 'severity': 'low'
             })
             
+        # 3. Title Check
         if not is_meaningful_content(fig['title']):
             errors.append({
                 'type': 'figure_title', 
@@ -227,17 +224,6 @@ def check_figure_ids(itsar_details: List[str], expected_tc_number: str, test_id:
                 'severity': 'medium'
             })
         expected_suffix += 1
-
-    # Check all other mentions for general alignment
-    for m in all_mentions:
-        if not m.startswith(expected_tc_number):
-            if not any(f['full_id'] == m for f in found_captions if not f['full_id'].startswith(expected_tc_number)):
-                errors.append({
-                    'type': 'figure_id', 
-                    'why': f"Incorrect figure alignment in text: Found 'figure {m}'", 
-                    'suggestion': f"Ensure Figure IDs in this section start with '{expected_tc_number}'", 
-                    'severity': 'low'
-                })
 
     return errors
 
@@ -342,42 +328,65 @@ def main():
             if not in_section_11: continue
 
             if re.match(r'^11\.', title):
-                 match_num = re.match(r'^(11[\d\s\.]+)', title)
-                 num = match_num.group(1).replace(' ', '').strip(':').strip('.') if match_num else title.split(' ', 1)[0].replace(' ', '').strip(':').strip('.')
-                 is_correct = "Test Case Number:" in title
-                 found_test_case_numbers.append({'number': num, 'title': title, 'is_correct_format': is_correct, 'section_id': sec_id})
+                 # Handle list title
+                 if isinstance(title, list):
+                     title_text = " ".join([str(i) for i in title if i]).strip()
+                 else:
+                     title_text = str(title).strip()
+                     
+                 match_num = re.match(r'^(11[\d\s\.]+)', title_text)
+                 num = match_num.group(1).replace(' ', '').strip(':').strip('.') if match_num else title_text.split(' ', 1)[0].replace(' ', '').strip(':').strip('.')
+                 is_correct = "Test Case Number:" in title_text
+                 found_test_case_numbers.append({'number': num, 'title': title_text, 'is_correct_format': is_correct, 'section_id': sec_id})
                  current_test_case_number = num
                  section11_found = True
                  content_list = []
-                 if 'content' in section:
-                     for item in section['content']:
-                         t = item.get('text', '').strip() if isinstance(item, dict) else str(item).strip()
-                         if not t: continue
-                         content_list.append(t)
-                         
-                         m = test_id_pattern.match(t)
-                         if m:
-                             found_test_ids.append({'id': m.group(1), 'title': t, 'section_id': sec_id, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list})
+                 
+                 raw_content = section.get('content', [])
+                 items = raw_content if isinstance(raw_content, list) else [raw_content]
+                 for item in items:
+                      t = ""
+                      if isinstance(item, dict):
+                          t = item.get('text', '')
+                      elif isinstance(item, list):
+                          t = " ".join([str(i) for i in item if i])
+                      else:
+                          t = str(item)
+                      
+                      t = t.strip()
+                      if not t: continue
+                      content_list.append(t)
+                      
+                      m = test_id_pattern.match(t)
+                      if m:
+                          found_test_ids.append({'id': m.group(1), 'title': t, 'section_id': sec_id, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list})
                  continue
 
             if re.search(r'^\d+\.\d+\.\d+\.\d+', title):
-                 match = test_id_pattern.match(title)
-                 if match or "itsar" in title.lower():
-                    tid = match.group(1) if match else title.split(' ')[0]
+                 # Handle list title
+                 if isinstance(title, list):
+                     title_text = " ".join([str(i) for i in title if i]).strip()
+                 else:
+                     title_text = str(title).strip()
+                     
+                 match = test_id_pattern.match(title_text)
+                 if match or "itsar" in title_text.lower():
+                    tid = match.group(1) if match else title_text.split(' ')[0]
                     if tid.startswith('12.') or tid.startswith('10.'): continue 
-                    found_test_ids.append({'id': tid, 'title': title, 'section_id': sec_id, 'section': section, 'test_case_number': current_test_case_number, 'is_embedded': False, 'content_list': None})
+                    found_test_ids.append({'id': tid, 'title': title_text, 'section_id': sec_id, 'section': section, 'test_case_number': current_test_case_number, 'is_embedded': False, 'content_list': None})
                     section11_found = True
 
         if not section11_found:
-             all_errors_table.append({'where': "Test Execution", 'what': "Section 11 Missing", 'suggestion': "Add Section 11", 'redirect_text': "Section 11 Missing", 'severity': 'high'})
+             all_errors_table.append({'sort_key': 0, 'where': "Test Execution", 'what': "Section 11 Missing", 'suggestion': "Add Section 11", 'redirect_text': "Section 11 Missing", 'severity': 'high'})
              all_valid = False
         else:
             if section11_title_error:
+                section11_title_error['sort_key'] = 5
                 all_errors_table.append(section11_title_error)
                 all_valid = False
             
             if not section11_found_via_header:
-                all_errors_table.append({'where': "Test Execution - 11. Test Execution:", 'what': "Missing or Incorrect Section 11 Main Header", 'suggestion': "Expected: '11. Test Execution:'", 'redirect_text': "Section 11", 'severity': 'medium'})
+                all_errors_table.append({'sort_key': 10, 'where': "Test Execution - 11. Test Execution:", 'what': "Missing or Incorrect Section 11 Main Header", 'suggestion': "Expected: '11. Test Execution:'", 'redirect_text': "Section 11", 'severity': 'medium'})
                 all_valid = False
             
             base_suffix = base_id.split('.')[-1] if base_id and '.' in base_id else "1"
@@ -394,6 +403,7 @@ def main():
                 num = tc['number']
                 l3_exp = f"{sub_prefix_base}.{i}"
                 where_sub = f"11. Test Execution - Subsection {l3_exp}"
+                sort_val = i * 1000  # Base sort key for this TC index
                 
                 # Check format "ID Test Case Number:"
                 expected_title = f"{l3_exp} Test Case Number:"
@@ -410,6 +420,7 @@ def main():
                         sev = 'medium'
                         
                     all_errors_table.append({
+                        'sort_key': sort_val,
                         'where': where_sub, 
                         'what': what_msg, 
                         'suggestion': f"Expected: '{expected_title}'", 
@@ -432,6 +443,7 @@ def main():
                 # New descriptive 'where' field using the EXPECTED number for location clarity
                 where_val = f"11. Test Execution - Test Case Number {expected_sub_prefix} - Test Case {exp_id}"
                 redirect_val = tc_title_map.get(tc_num, tid)
+                sort_val = i * 1000 + 50 # Ensure it comes after the header check for the same index
 
                 # 1. Base ID Check
                 is_base_mismatch = False
@@ -443,6 +455,7 @@ def main():
                 
                 if is_base_mismatch:
                     all_errors_table.append({
+                        'sort_key': sort_val,
                         'where': where_val, 
                         'what': f"Base ID mismatch: Found '{tid}'. expected prefix '{base_id}'.", 
                         'suggestion': f"Ensure Base ID is {base_id}", 
@@ -454,6 +467,7 @@ def main():
                 # 2. Sequence Check
                 if tid != exp_id:
                     all_errors_table.append({
+                        'sort_key': sort_val + 1,
                         'where': where_val, 
                         'what': f"Incorrect sequence: Found '{tid}' instead of '{exp_id}'", 
                         'suggestion': f"Fix ID to {exp_id}", 
@@ -468,6 +482,7 @@ def main():
                     rem = test['title'].split(tid, 1)[1].strip()
                     if expected_title_suffix.lower() not in rem.lower():
                         all_errors_table.append({
+                            'sort_key': sort_val + 2,
                             'where': where_val, 
                             'what': f"Incorrect Title suffix: Found '{rem}' instead of '{expected_title_suffix}'", 
                             'suggestion': f"Expected format: '{exp_id} {expected_title_suffix}'", 
@@ -480,14 +495,25 @@ def main():
                 content = []
                 if test['is_embedded']: 
                     content = test['content_list']
-                elif 'itsar_section_details' in test['section']: 
-                    content = test['section']['itsar_section_details']
-                elif 'content' in test['section']:
-                    for it in test['section']['content']: 
-                        content.append(it.get('text', '') if isinstance(it, dict) else str(it))
+                else: 
+                    # Aggregate content from itsar_section_details and content fields
+                    for field_name in ['itsar_section_details', 'content']:
+                        field_val = test['section'].get(field_name, [])
+                        items = field_val if isinstance(field_val, list) else [field_val]
+                        for it in items:
+                            text = ""
+                            if isinstance(it, dict):
+                                text = it.get('text', '')
+                            elif isinstance(it, list):
+                                text = " ".join([str(v) for v in it if v])
+                            else:
+                                text = str(it)
+                            if text.strip():
+                                content.append(text.strip())
                 
                 if not content or not any(is_meaningful_content(c) for c in content):
                     all_errors_table.append({
+                        'sort_key': sort_val + 3,
                         'where': where_val, 
                         'what': "Content missing: Test case details are missing or empty", 
                         'suggestion': "Add test case details (Name, Description, Steps, etc.)", 
@@ -498,10 +524,11 @@ def main():
                 else:
                     # Validate sub-sections (a, b, c, d, e)
                     sub_err = check_itsar_subsections(content, tid)
-                    for err in sub_err:
+                    for err_idx, err in enumerate(sub_err):
                         # Update where to be more specific if possible
                         detailed_where = f"{where_val} - {err['label']}"
                         all_errors_table.append({
+                            'sort_key': sort_val + 4 + (err_idx * 0.1),
                             'where': detailed_where, 
                             'what': err['why'], 
                             'suggestion': err['suggestion'], 
@@ -511,8 +538,9 @@ def main():
                         all_valid = False
                     
                     fig_err = check_figure_ids(content, expected_sub_prefix, tid)
-                    for err in fig_err:
+                    for fig_idx, err in enumerate(fig_err):
                         all_errors_table.append({
+                            'sort_key': sort_val + 5 + (fig_idx * 0.1),
                             'where': where_val, 
                             'what': err['why'], 
                             'suggestion': err['suggestion'], 
@@ -525,9 +553,18 @@ def main():
         print(json.dumps([{"where": "Process Error", "what": str(e), "suggestion": "Fix JSON"}], indent=4))
         sys.exit(1)
 
-    all_errors_table.sort(key=lambda x: {'high': 0, 'medium': 1, 'low': 2}.get(x.get('severity', 'low'), 3))
-    print(json.dumps(all_errors_table, indent=4))
-    with open('output.json', 'w', encoding='utf-8') as f: json.dump(all_errors_table, f, indent=4)
+    # Sort primarily by sort_key, then by severity
+    severity_map = {'high': 0, 'medium': 1, 'low': 2}
+    all_errors_table.sort(key=lambda x: (x.get('sort_key', 9999), severity_map.get(x.get('severity', 'low'), 3)))
+    
+    # Remove sort_key from the final output for cleaner JSON
+    final_output = []
+    for err in all_errors_table:
+        clean_err = {k: v for k, v in err.items() if k != 'sort_key'}
+        final_output.append(clean_err)
+
+    print(json.dumps(final_output, indent=4))
+    with open('output.json', 'w', encoding='utf-8') as f: json.dump(final_output, f, indent=4)
     sys.exit(1 if not all_valid else 0)
 
 if __name__ == "__main__":

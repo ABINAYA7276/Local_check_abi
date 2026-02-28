@@ -3,12 +3,13 @@ import os
 import sys
 import re
 
-def is_meaningful_content(text):
-    if not text or not isinstance(text, str): return False
-    val = text.strip().lower()
-    if val in ['none', 'n/a', 'nil', '.', '-', '...', '_']: return False
-    words = re.findall(r'[A-Za-z0-9]+', text)
-    return len(words) >= 2
+def is_meaningful_content(t):
+    if not t or not isinstance(t, str):
+        return False
+    t_clean = t.strip()
+    if t_clean.lower() in ['none', 'n/a', 'nil', 'tbd', '...', '---', '', '.', '-']:
+        return False
+    return True
 
 def check_section_8(file_path):
     """
@@ -49,12 +50,13 @@ def check_section_8(file_path):
                 "where": expected_title,
                 "what": "Section 8 missing",
                 "suggestion": f"Add {expected_title}",
+                "redirect_text": "Test Plan",
                 "severity": "high"
             }]
 
         actual_title = target_section.get('title', '').strip()
-        # Clean redirect title (remove leading numbers)
-        redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).strip()
+        # Clean redirect title (remove leading numbers and trailing colons)
+        redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or "Test Plan"
         
         # Title Validation - STOP if wrong
         if actual_title.replace(':', '').strip().lower() != expected_title.replace(':', '').strip().lower():
@@ -62,33 +64,46 @@ def check_section_8(file_path):
                 "where": expected_title,
                 "what": "Section 8 missing",
                 "suggestion": f"Add {expected_title}",
+                "redirect_text": "Test Plan",
                 "severity": "high"
             }]
         else:
             # Content Check
-            content = target_section.get('content', [])
-        has_meaningful = False
-        
-        if 'test_plan' in target_section:
-             plan_text = target_section['test_plan']
-             if isinstance(plan_text, str) and is_meaningful_content(plan_text):
-                 has_meaningful = True
-        
-        if not has_meaningful:
-            for item in content:
-                text = item.get('text', '') if isinstance(item, dict) else str(item)
+            has_meaningful = False
+            found_text_sample = ""
+            
+            # Check 'test_plan' first, then fallback to 'content'
+            items_to_check = target_section.get('test_plan', [])
+            if not items_to_check:
+                items_to_check = target_section.get('content', [])
+            
+            # Handle if it's a list or string
+            check_list = items_to_check if isinstance(items_to_check, list) else ([items_to_check] if items_to_check else [])
+
+            for item in check_list:
+                text = ""
+                if isinstance(item, dict):
+                    # Images NO LONGER count as content (Consistent with Section 5/7)
+                    text = item.get('text', '')
+                elif isinstance(item, list):
+                    text = " ".join([str(i) for i in item if i])
+                else:
+                    text = str(item)
+                    
                 if is_meaningful_content(text):
                     has_meaningful = True
                     break
+                elif text.strip() and not found_text_sample:
+                     found_text_sample = text.strip()
 
-        if not has_meaningful:
-           all_errors_table.append({
-               "where": expected_title, 
-               "what": "Test Plan content is missing or non-descriptive", 
-               "suggestion": "Add test plan introductory content", 
-               "redirect_text": redirect_title,
-               "severity": "high"
-           })
+            if not has_meaningful:
+               all_errors_table.append({
+                   "where": actual_title, 
+                   "what": "Test Plan content is missing or non-descriptive", 
+                   "suggestion": "Add test plan introductory content", 
+                   "redirect_text": redirect_title,
+                   "severity": "high"
+               })
         
         # Final Processing: Sort findings by severity: high > medium > low
         findings = []

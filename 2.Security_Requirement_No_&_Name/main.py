@@ -45,6 +45,7 @@ def check_section_2(file_path):
                 "where": standard_title,
                 "what": "Section 2 missing",
                 "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
                 "severity": "High"
             }]
 
@@ -57,8 +58,14 @@ def check_section_2(file_path):
                 "where": found_title if found_title else "Section 2",
                 "what": "Section 2 missing",
                 "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
                 "severity": "High"
             }]
+
+        actual_title = found_title
+        import re
+        # Clean redirect: Remove leading numbers/dots and trailing colons
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
 
         errors = []
         has_valid_content = False
@@ -81,14 +88,20 @@ def check_section_2(file_path):
         if sec_req: content_sources.append(sec_req)
         
         content = target_section.get('content', [])
-        if isinstance(content, list): content_sources.extend(content)
+        if isinstance(content, list): 
+            for c_item in content:
+                if isinstance(c_item, dict):
+                    # Skip image types for validation (Consistent with other sections)
+                    if c_item.get('type') == 'image' or c_item.get('image_path'):
+                         continue
+                    content_sources.append(c_item.get('text', ''))
+                else:
+                    content_sources.append(str(c_item))
 
-        for item in content_sources:
-            text = ""
-            if isinstance(item, str): text = item
-            elif isinstance(item, dict): text = item.get('text', '') or item.get('security_requirement', '')
+        for text in content_sources:
+            if isinstance(text, list): text = " ".join([str(i) for i in text if i])
             
-            text = text.strip()
+            text = str(text).strip()
             if text:
                 if not found_text_sample:
                     found_text_sample = text
@@ -99,10 +112,10 @@ def check_section_2(file_path):
         
         if not has_valid_content:
             errors.append({
-                "where": standard_title,
+                "where": actual_title,
                 "what": f"content missing. Found: '{found_text_sample}'",
                 "suggestion": "Provide the security requirement number and name details.",
-                "redirect_text": stable_redirect,
+                "redirect_text": redirect_val,
                 "severity": "High"
             })
             

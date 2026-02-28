@@ -118,15 +118,20 @@ def main():
 
         # Check all possible content fields
         content_sources = []
+        # Check fields and aggregate content
         if 'itsar_section_details' in target_section:
             details = target_section['itsar_section_details']
-            if isinstance(details, list): content_sources.extend(details)
-            elif isinstance(details, str): content_sources.append(details)
+            if isinstance(details, list):
+                content_sources.append(" ".join([str(i) for i in details if i]))
+            else:
+                content_sources.append(str(details))
             
         if 'content' in target_section:
             content = target_section['content']
-            if isinstance(content, list): content_sources.extend(content)
-            elif isinstance(content, str): content_sources.append(content)
+            if isinstance(content, list):
+                content_sources.append(" ".join([str(i) for i in content if i]))
+            else:
+                content_sources.append(str(content))
 
         for item in content_sources:
             text = ""

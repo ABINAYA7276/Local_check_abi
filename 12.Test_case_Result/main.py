@@ -29,7 +29,13 @@ def check_section_12(file_path):
 
         for section in sections:
             sec_id = section.get('section_id', '')
-            title = " ".join(section.get('title', '').split())
+            raw_title = section.get('title', '')
+            if isinstance(raw_title, list):
+                title = " ".join([str(i) for i in raw_title if i]).strip()
+            else:
+                title = str(raw_title).strip()
+            
+            title = " ".join(title.split())
             title_lower = title.lower()
 
             # Optional: Check Section 1, 2 or 3 for base_id
@@ -37,16 +43,27 @@ def check_section_12(file_path):
                 if sec_id in ['SEC-01', 'SEC-02', 'SEC-03'] or re.search(r'\b[123]\.', title):
                     # Check direct fields
                     for field in ['security_requirement', 'requirement_description']:
-                        val = section.get(field, '')
+                        val = section.get(field, [])
                         if val:
-                            match = re.search(r'\b(\d+\.\d+\.\d+)\b', str(val))
+                            if isinstance(val, list):
+                                text_val = " ".join([str(i) for i in val if i]).strip()
+                            else:
+                                text_val = str(val).strip()
+                                
+                            match = re.search(r'\b(\d+\.\d+\.\d+)\b', text_val)
                             if match:
                                 base_id = match.group(1)
                                 break
                     if not base_id:
                         content = section.get('content', [])
-                        for item in content:
-                            text = item.get('text', '').strip() if isinstance(item, dict) else str(item).strip()
+                        check_list = content if isinstance(content, list) else [content]
+                        for item in check_list:
+                            text = ""
+                            if isinstance(item, dict): text = item.get('text', '')
+                            elif isinstance(item, list): text = " ".join([str(i) for i in item if i])
+                            else: text = str(item)
+                            
+                            text = text.strip()
                             match = re.search(r'\b(\d+\.\d+\.\d+)\b', text)
                             if match:
                                 base_id = match.group(1)
@@ -54,8 +71,13 @@ def check_section_12(file_path):
         
         # 2. Robust Section Discovery: Mandatory Keywords ["12", "test", "case", "result"]
         for section in sections:
-            title = section.get('title', '').strip()
-            title_lower = title.lower()
+            raw_title = section.get('title', '')
+            if isinstance(raw_title, list):
+                title_text = " ".join([str(i) for i in raw_title if i]).strip()
+            else:
+                title_text = str(raw_title).strip()
+            
+            title_lower = title_text.lower()
             
             # Identify the section by searching for mandatory keywords
             keywords = ["12", "test", "case", "result"]
@@ -188,10 +210,16 @@ def check_section_12(file_path):
                             errors.append({"where": f"{section_ref} - Row #{ridx}", "what": f"Incomplete row data: Found {len(row)} columns. in {redirect_title}", "suggestion": "Ensure each row has 4 columns", "redirect_text": redirect_title, "severity": "medium"})
                             continue
                         
-                        s_no = str(row[0]).strip()
-                        tc_id = str(row[1]).strip()
-                        status = str(row[2]).strip()
-                        remarks = str(row[3]).strip()
+                        # Master Logic for cells
+                        def get_text(val):
+                            if isinstance(val, list):
+                                return " ".join([str(i) for i in val if i]).strip()
+                            return str(val).strip()
+
+                        s_no = get_text(row[0])
+                        tc_id = get_text(row[1])
+                        status = get_text(row[2])
+                        remarks = get_text(row[3])
                         
                         # Individual check: Expected ID is based on local Base ID + Row Index
                         expected_id = f"{base_id}.{ridx}" if base_id else f"[ID].{ridx}"

@@ -71,29 +71,35 @@ def check_section_10(file_path):
         import re
         redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).strip() or actual_title
         
-        # 2. Check Content Presence
         has_text = False
-        
-        # Check in 'expected_format_of_evidence' field
-        expected_format = target_section.get('expected_format_of_evidence', '')
-        if expected_format and str(expected_format).strip():
-            expected_format_lower = str(expected_format).strip().lower()
-            if (expected_format_lower and 
-                expected_format_lower not in ['none', 'n/a', 'nil', '.', '-', '_', '...'] and
-                len(str(expected_format).strip()) > 2 and
-                not all(c in '.-_,;:!? ' for c in str(expected_format).strip())):
-                has_text = True
-        
-        # Check in 'content' field
-        content_objects = []
         if not has_text:
-            content_objects = target_section.get('content', [])
-            for item in content_objects:
+            # Check 'expected_format_of_evidence' first, then fallback to 'content'
+            items_to_check = []
+            exp_fmt = target_section.get('expected_format_of_evidence', [])
+            if exp_fmt:
+                if isinstance(exp_fmt, list): items_to_check.extend(exp_fmt)
+                else: items_to_check.append(exp_fmt)
+            
+            # Fallback to content
+            if not items_to_check:
+                items_to_check = target_section.get('content', [])
+
+            # Handle if it's a list or string
+            check_list = items_to_check if isinstance(items_to_check, list) else ([items_to_check] if items_to_check else [])
+
+            found_text_sample = ""
+            for item in check_list:
                 text = ""
                 if isinstance(item, dict):
+                    # Count images as valid content
+                    if item.get('type') == 'image' or item.get('image_path'):
+                        has_text = True
+                        break
                     text = item.get('text', '').strip()
-                elif isinstance(item, str):
-                    text = item.strip()
+                elif isinstance(item, list):
+                    text = " ".join([str(i) for i in item if i]).strip()
+                else:
+                    text = str(item).strip()
                 
                 if text:
                     text_lower = text.lower()
@@ -102,10 +108,12 @@ def check_section_10(file_path):
                         not all(c in '.-_,;:!? ' for c in text)):
                         has_text = True
                         break
+                    elif not found_text_sample:
+                        found_text_sample = text
         
         if not has_text:
             # Capture the first thing we found to show in the error message
-            found_val = expected_format if expected_format else (content_objects[0] if content_objects else "None")
+            found_val = found_text_sample if found_text_sample else "None"
             findings.append({
                 "where": expected_title,
                 "what": f"content missing in {expected_title}. Found: '{found_val}'",
