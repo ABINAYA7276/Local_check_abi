@@ -27,7 +27,7 @@ def check_section_5(file_path):
         
         sections = data.get('sections', [])
         target_section = None
-        stable_redirect = "DUT Configuration"
+        stable_redirect = "5. DUT Configuration"
         standard_title = "5. DUT Configuration:"
         
         # 1. IDENTIFICATION (Fuzzy & Number-based)
@@ -74,8 +74,8 @@ def check_section_5(file_path):
         found_text_sample = ""
         
         import re
-        # Clean redirect: Always remove leading numbers/dots and trailing colon
-        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
+        # Clean redirect: Remove trailing colon, keep leading numbers if any
+        redirect_val = actual_title.replace(':', '').strip() or stable_redirect
 
         # Check specific field 'dut_configuration' first
         dut_conf_list = target_section.get('dut_configuration', [])

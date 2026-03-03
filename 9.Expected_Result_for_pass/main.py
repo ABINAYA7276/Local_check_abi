@@ -154,6 +154,18 @@ def main():
                 
                 # Check for ID in header or beginning of desc
                 combined = (header + " " + desc).strip()
+                
+                # Check for missing space in 'Test Scenario'
+                if re.search(r'TestScenario', combined, re.IGNORECASE):
+                    all_errors.append({
+                        'pos': position,
+                        'where': f"{expected9_title} - Test Scenario {position}",
+                        'what': "Incorrect format: Found 'TestScenario' (missing space)",
+                        'suggestion': "Expected: 'Test Scenario'",
+                        'redirect_text': actual_redirect,
+                        'severity': 'low'
+                    })
+
                 id_match = test_id_pattern.search(combined)
                 
                 exp_id = f"{base_id}.{position}" if base_id else f"X.X.X.{position}"

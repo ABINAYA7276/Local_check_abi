@@ -12,9 +12,9 @@ def is_meaningful_content(text: str) -> bool:
         return False
     cleaned = text.strip()
     # Remove common labels GLOBALLY to see if there is actual content
-    temp = re.sub(r'Test\s+Sc[eh]n?ario\s*[:.-]*', '', cleaned, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'Test\s+Case\s+Number\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'[a-e]\.\s*(Test\s+Case\s+Name|Test\s+Case\s+Description|Description|Execution\s+Steps|Test\s+Observations|Evidence\s+Provided)\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'Test\s*Sc[eh]n?ario\s*[:.-]*', '', cleaned, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'Test\s*Case\s+Number\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'[a-e]\.\s*(Test\s*Case\s*Name|TestCaseName|Test\s*Case\s*Description|TestCaseDescription|Execution\s*Steps|ExecutionSteps|Test\s*Observations|TestObservations|Evidence\s*Provided|EvidenceProvided|Description)\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
     temp = re.sub(r'TC\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
 
     if not temp or temp.lower() in [".", ":", "-", "_", "...", "n/a", "none", "nil"]:
@@ -25,11 +25,11 @@ def is_meaningful_content(text: str) -> bool:
 
 def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict]:
     definitions = {
-        'a': {'label': 'a. Test Case Name', 'keywords': ['test case name', 'testcase name'], 'prefix': 'a.'},
-        'b': {'label': 'b. Test Case Description', 'keywords': ['test case description', 'testcase description', 'description'], 'prefix': 'b.'},
-        'c': {'label': 'c. Execution Steps', 'keywords': ['execution steps', 'execution step', 'execution'], 'prefix': 'c.'},
-        'd': {'label': 'd. Test Observations', 'keywords': ['test observation', 'observation'], 'prefix': 'd.'},
-        'e': {'label': 'e. Evidence Provided', 'keywords': ['evidence provided', 'evidence'], 'prefix': 'e.'},
+        'a': {'label': 'a. Test Case Name', 'keywords': ['test case name', 'testcase name', 'testcasename'], 'prefix': 'a.'},
+        'b': {'label': 'b. Test Case Description', 'keywords': ['test case description', 'testcase description', 'testcasedescription', 'description'], 'prefix': 'b.'},
+        'c': {'label': 'c. Execution Steps', 'keywords': ['execution steps', 'execution step', 'executionsteps', 'execution'], 'prefix': 'c.'},
+        'd': {'label': 'd. Test Observations', 'keywords': ['test observation', 'testobservation', 'observation'], 'prefix': 'd.'},
+        'e': {'label': 'e. Evidence Provided', 'keywords': ['evidence provided', 'evidenceprovided', 'evidence'], 'prefix': 'e.'},
     }
     
     sections_status = {key: {'found': False, 'has_content': False, 'label': d['label'], 'wrong_prefix': None, 'found_text': '', 'intended_header': None} for key, d in definitions.items()}
@@ -91,10 +91,18 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict
 
                     if is_header:
                         sections_status[key]['found'] = True
-                        sections_status[key]['intended_header'] = None # Found correctly
+                        sections_status[key]['intended_header'] = None
                         current_section = key
                         found_marker = True
                         found_kw = True
+
+                        # Check for missing spaces or exact format mismatch
+                        actual_label_part = text_normalized.split(':')[0].strip()
+                        if actual_label_part.lower() != info['label'].lower():
+                             # It matched enough to be 'found', but formatting is wrong
+                             sections_status[key]['format_error'] = True
+                             sections_status[key]['found_header'] = text_normalized
+
                         p_content = r'^' + re.escape(info['prefix']) + r'\s*' + re.escape(kw_norm) + r'[:\-]?\s*'
                         remaining = re.sub(p_content, '', text_normalized, count=1, flags=re.IGNORECASE).strip()
                         if is_meaningful_content(remaining): sections_status[key]['has_content'] = True
@@ -157,6 +165,16 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict
                     'label': label,
                     'severity': 'medium'
                 })
+            
+            # Check for space/format error (a, b, c, d, e)
+            if status.get('format_error'):
+                 errors.append({
+                    'why': f"Incorrect header format: Found '{status['found_header'].split(':')[0].strip()}'",
+                    'suggestion': f"Expected: '{label}:'",
+                    'label': label,
+                    'severity': 'low'
+                })
+
             if not status['has_content']:
                 why = f"Missing content: Found empty in '{label}' section"
                 errors.append({
@@ -271,7 +289,7 @@ def main():
                 title = section.get('title', '').strip()
                 sec_id = section.get('section_id', '')
                 
-                is_req_sec = sec_id == 'SEC-02' or re.search(r'Security\s+Requirement', title, re.IGNORECASE) or re.search(r'^2\.', title)
+                is_req_sec = "Security Requirement No & Name" in title or re.search(r'^2\.', title) or re.search(r'Security\s+Requirement', title, re.IGNORECASE)
                 # Check field
                 req_text = section.get('security_requirement', '')
                 m = re.search(r'(\d+\.\d+\.\d+)', req_text)

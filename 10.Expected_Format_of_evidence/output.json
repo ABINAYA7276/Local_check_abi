@@ -1,9 +1,0 @@
-[
-    {
-        "where": "10. Expected Format of Evidence:",
-        "what": "content missing in 10. Expected Format of Evidence:. Found: '{'type': 'paragraph', 'text': ''}'",
-        "suggestion": "Add Expected Format of Evidence description",
-        "redirect_text": "Expected Format of Evidence:",
-        "severity": "high"
-    }
-]

@@ -166,8 +166,19 @@ def main():
                 for sc in parsed_scenarios:
                     header = sc['header']
                     desc = sc['desc']
+                    full_sc_text = header + " " + desc
+
+                    # Check for missing space in 'Test Scenario'
+                    if re.search(r'TestScenario', full_sc_text, re.IGNORECASE):
+                        all_errors_table.append({
+                            'where': f"{expected81_title}: - Test Scenario {position + 1}",
+                            'what': "Incorrect format: Found 'TestScenario' (missing space)",
+                            'suggestion': "Expected: 'Test Scenario'",
+                            'redirect_text': actual_redirect,
+                            'severity': 'low'
+                        })
                     
-                    matches = test_id_pattern.findall(header + " " + desc)
+                    matches = test_id_pattern.findall(full_sc_text)
                     if not matches:
                         # Check labels if no numeric ID found
                         if any(l in (header + " " + desc).lower() for l in ['test scenario', 'tc', 'test case']):
@@ -242,9 +253,26 @@ def main():
     except Exception as e:
         all_errors_table.append({'where': "Section 8.1 Processing", 'what': f"Error: {str(e)}", 'suggestion': "Check JSON format", 'severity': 'high'})
 
-    # Sorting (High -> Medium -> Low)
+    # Sorting (Natural Sort by Scenario ID)
     severity_order = {"high": 0, "medium": 1, "low": 2}
-    all_errors_table.sort(key=lambda x: (severity_order.get(x.get("severity", "low"), 2), x.get("where", "")))
+    
+    def get_sort_key(error):
+        where = error.get('where', '')
+        # Handle Section title/missing errors first
+        if where.endswith(':'):
+             return (-1, [], severity_order.get(error.get("severity", "low"), 2))
+            
+        # Extract scenario ID for natural sorting (e.g., 1.1.1.2 before 1.1.1.10)
+        match = re.search(r'Test Scenario ([\d\s\.]+)', where)
+        if match:
+            id_str = match.group(1).replace(' ', '')
+            id_parts = [int(x) for x in id_str.split('.') if x.strip().isdigit()]
+            return (0, id_parts, severity_order.get(error.get("severity", "low"), 2))
+            
+        # Fallback for any other errors
+        return (1, [where], severity_order.get(error.get("severity", "low"), 2))
+
+    all_errors_table.sort(key=get_sort_key)
 
     # Final Output
     findings = []

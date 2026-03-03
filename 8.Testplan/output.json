@@ -1,9 +1,0 @@
-[
-    {
-        "where": "8. Test Plan",
-        "what": "Test Plan content is missing or non-descriptive",
-        "suggestion": "Add test plan introductory content",
-        "redirect_text": "Test Plan",
-        "severity": "high"
-    }
-]

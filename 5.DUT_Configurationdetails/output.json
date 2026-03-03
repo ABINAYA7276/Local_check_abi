@@ -1,9 +1,0 @@
-[
-    {
-        "where": "5. DUT Configuration:",
-        "what": "content missing. Found: '.'",
-        "suggestion": "Provide the DUT configuration details.",
-        "redirect_text": "DUT Configuration:",
-        "severity": "High"
-    }
-]
