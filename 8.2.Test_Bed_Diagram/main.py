@@ -55,65 +55,75 @@ def check_section_8_2(file_path):
 
         # Content Validation
         content = primary_section.get('content', [])
-        has_perfect_figure = False
-        found_any_figure = False
-        id_correct = False
-        name_correct = False
-        best_candidate = ""
+        errors = []
         
-        for item in content:
-            text = item.get('text', '').strip() if isinstance(item, dict) else str(item).strip()
-            text_lower = text.lower()
-            
-            if 'figure' in text_lower:
-                found_any_figure = True
-                best_candidate = text
-                
-                # Check ID
-                curr_id_correct = '8.2.1' in text
-                # Check Name
-                # Check Name: Allow spaces or hyphens between words, but ensure it ends exactly at 'diagram'
-                curr_name_correct = bool(re.search(r'test[\s\-]+bed[\s\-]+diagram\b', text_lower))
-                
-                if curr_id_correct and curr_name_correct:
-                    has_perfect_figure = True
-                    break
-                
-                # Track best candidate (the one with the most correct parts)
-                if curr_id_correct: id_correct = True
-                if curr_name_correct: name_correct = True
+        has_image = any(isinstance(item, dict) and item.get('type') == 'image' for item in content)
         
-        if not has_perfect_figure:
-            if not found_any_figure:
-                errors.append({
-                    "where": f"{actual_title} - Figure Check",
-                    "what": "Figure ID and Name are missing.",
-                    "suggestion": "Expected: 'Figure 8.2.1: Test Bed Diagram'",
-                    "redirect_text": redirect_title,
-                    "severity": "high"
-                })
-            else:
-                if not id_correct:
-                    # If some numbers exist, call it 'incorrect', otherwise 'missing'
-                    id_status = "incorrect" if re.search(r'\d', best_candidate) else "missing"
+        if not has_image:
+            errors.append({
+                "where": f"{actual_title}",
+                "what": "Test Bed Diagram image is missing.",
+                "suggestion": "Add the diagram image in Section 8.2",
+                "redirect_text": redirect_title,
+                "severity": "high"
+            })
+        
+        figure_caption_pattern = re.compile(r'^[Ff]igure\s+([\d\.]+)\s*([-–: ])\s*(.*)$', re.IGNORECASE)
+        
+        img_found = False
+        for i, item in enumerate(content):
+            if isinstance(item, dict) and item.get('type') == 'image':
+                img_found = True
+                # Check for caption following the image
+                has_caption = False
+                caption_text = ""
+                for j in range(i + 1, len(content)):
+                    next_item = content[j]
+                    text = next_item.get('text', '').strip() if isinstance(next_item, dict) else str(next_item).strip()
+                    if not text: continue
+                    
+                    if figure_caption_pattern.match(text):
+                        has_caption = True
+                        caption_text = text
+                        break
+                    else:
+                        break # Found something else
+                
+                if not has_caption:
                     errors.append({
-                        "where": f"{actual_title} - Figure ID Check",
-                        "what": f"Figure ID is {id_status}: Found '{best_candidate}'.",
-                        "suggestion": "Expected ID: '8.2.1'",
+                        "where": f"{actual_title} - Figure Check",
+                        "what": "Figure caption is missing under the diagram.",
+                        "suggestion": "Add caption: 'Figure 8.2.1- Test Bed Diagram'",
                         "redirect_text": redirect_title,
-                        "severity": "high" if id_status == "missing" else "low"
+                        "severity": "high"
                     })
-                if not name_correct:
-                    # If some text exists after 'Figure', call it 'incorrect', otherwise 'missing'
-                    # We check if there's any alphabetical text besides 'Figure'
-                    name_status = "incorrect" if re.search(r'[a-z]{3,}', best_candidate.lower().replace('figure', '')) else "missing"
-                    errors.append({
-                        "where": f"{actual_title} - Figure Name Check",
-                        "what": f"Figure name is {name_status}: Found '{best_candidate}'.",
-                        "suggestion": "Expected Name: 'Test Bed Diagram'",
-                        "redirect_text": redirect_title,
-                        "severity": "high" if name_status == "missing" else "medium"
-                    })
+                else:
+                    # Validate the found caption
+                    cap_match = figure_caption_pattern.match(caption_text)
+                    full_id = cap_match.group(1).strip('.')
+                    sep = cap_match.group(2)
+                    figure_title = cap_match.group(3).strip()
+                    
+                    # 1. ID Check
+                    if full_id != '8.2.1' and not full_id.startswith('8.2.'):
+                        errors.append({
+                            "where": f"{actual_title} - Figure ID Check",
+                            "what": f"Incorrect Figure ID: Found '{full_id}'.",
+                            "suggestion": "Expected: '8.2.1'",
+                            "redirect_text": redirect_title,
+                            "severity": "medium"
+                        })
+                    
+                    # 2. Name Check - Must be "Test Bed Diagram" only
+                    norm_title = " ".join(figure_title.lower().split())
+                    if norm_title != "test bed diagram":
+                        errors.append({
+                            "where": f"{actual_title} - Figure Name Check",
+                            "what": f"Incorrect Figure Name: Found '{figure_title}'.",
+                            "suggestion": "Expected: 'Test Bed Diagram'",
+                            "redirect_text": redirect_title,
+                            "severity": "medium"
+                        })
 
         return errors
 

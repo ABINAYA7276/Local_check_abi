@@ -9,10 +9,6 @@ from typing import List, Dict, Tuple, Optional
 
 def is_meaningful_content(text: str) -> bool:
     if not text: return False
-    # Remove common labels and IDs to see if actual description exists
-    text = re.sub(r'(Test\s+Sc[eh]n?ario|TC\s*[:.-]|T\.C\.|Test\s+Case)', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\b\d+([\. ]+\d+)+\b', '', text) # Remove IDs
-    
     text = text.strip().lower()
     if text == 'na': return True
     if text in ['none', 'n/a', 'nil', '.', '-', '_', '...'] or len(text) < 3: return False
@@ -42,13 +38,13 @@ def main():
             data = json.load(f)
         
         sections = data.get('sections', [])
-        test_id_pattern = re.compile(r'\b(\d+(?:\s*[\. ]\s*\d+){3})\b')
+        test_id_pattern = re.compile(r'(\d+(?:\s*[\. ]\s*\d+){3,})')
 
         # 1. Get base IDs (Aligned with 8.4 logic but more explicit for cross-check)
         base_id_fp = None
         fp_content = data.get('frontpage_data', {}).get('content', [])
         for item in fp_content:
-            m = re.search(r'\b(\d+(?:\s*[\. ]\s*\d+){2})\b', str(item))
+            m = re.search(r'(\d+(?:\s*[\. ]\s*\d+){2})', str(item))
             if m:
                 base_id_fp = re.sub(r'[\s]+', '', m.group(1))
                 break
@@ -65,7 +61,7 @@ def main():
                     vals = val if isinstance(val, list) else [val]
                     for v in vals:
                         text = v.get('text', '') if isinstance(v, dict) else str(v)
-                        m = re.search(r'\b(\d+(?:\s*[\. ]\s*\d+){2})\b', text.strip())
+                        m = re.search(r'(\d+(?:\s*[\. ]\s*\d+){2})', text.strip())
                         if m: 
                             base_id_sec2 = re.sub(r'[\s]+', '', m.group(1))
                             break
@@ -145,7 +141,8 @@ def main():
                     
                     # Joining and re-splitting to handle IDs correctly
                     full_text = " ".join(raw_text_blocks)
-                    parts = re.split(r'(?=\b\d+(?:\s*[\. ]\s*\d+){3}\b)', full_text)
+                    # Use a more flexible split to handle spaces in IDs
+                    parts = re.split(r'(?=\b\d+(?:\s*[\. ]\s*\d+){3,}\b)', full_text)
                     for p in parts:
                         p = p.strip()
                         if not p: continue
@@ -168,8 +165,8 @@ def main():
                     desc = sc['desc']
                     full_sc_text = header + " " + desc
 
-                    # Check for missing space in 'Test Scenario'
-                    if re.search(r'TestScenario', full_sc_text, re.IGNORECASE):
+                    # Check for missing space in 'Test Scenario' field/header only
+                    if re.search(r'TestScenario', header, re.IGNORECASE):
                         all_errors_table.append({
                             'where': f"{expected81_title}: - Test Scenario {position + 1}",
                             'what': "Incorrect format: Found 'TestScenario' (missing space)",
@@ -200,6 +197,7 @@ def main():
                     # In structured mode, we expect exactly 1 ID per block
                     # If we found multiple in a single 'desc', we treat the first one as the primary
                     raw_id = matches[0]
+                    # Normalize ID by removing all spaces
                     test_id = re.sub(r'[\s]+', '', raw_id)
                     position += 1
                     exp_id = f"{base_id}.{position}" if base_id else test_id
@@ -225,24 +223,27 @@ def main():
                             'severity': 'high'
                         })
                     
-                    # Sequence/Alignment
-                    if test_id != exp_id:
-                        if base_id and ".".join(test_id.split(".")[:3]) != base_id:
+                    # Sequence/Alignment (Normalize both for comparison)
+                    norm_test_id = re.sub(r'[\s]+', '', test_id)
+                    norm_exp_id = re.sub(r'[\s]+', '', exp_id)
+                    
+                    if norm_test_id != norm_exp_id:
+                        if base_id and ".".join(norm_test_id.split(".")[:3]) != base_id.replace(' ', ''):
                              all_errors_table.append({
-                                'where': where_ref,
-                                'what': f"Base ID mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
-                                'suggestion': f"Expected Base ID: {base_id}",
-                                'redirect_text': actual_redirect,
-                                'severity': 'low'
-                            })
+                                 'where': where_ref,
+                                 'what': f"Base ID mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
+                                 'suggestion': f"Expected Base ID: {base_id}",
+                                 'redirect_text': actual_redirect,
+                                 'severity': 'low'
+                             })
                         else:
-                            all_errors_table.append({
-                                'where': where_ref,
-                                'what': f"ID alignment mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
-                                'suggestion': f"Correct ID to {exp_id}",
-                                'redirect_text': actual_redirect,
-                                'severity': 'low'
-                            })
+                             all_errors_table.append({
+                                 'where': where_ref,
+                                 'what': f"ID alignment mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
+                                 'suggestion': f"Correct ID to {exp_id}",
+                                 'redirect_text': actual_redirect,
+                                 'severity': 'low'
+                             })
                 break
 
         if not section81_found:

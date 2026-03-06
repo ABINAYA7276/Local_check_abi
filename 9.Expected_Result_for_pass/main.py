@@ -155,8 +155,8 @@ def main():
                 # Check for ID in header or beginning of desc
                 combined = (header + " " + desc).strip()
                 
-                # Check for missing space in 'Test Scenario'
-                if re.search(r'TestScenario', combined, re.IGNORECASE):
+                # Check for missing space in 'Test Scenario' field/header only
+                if re.search(r'TestScenario', header, re.IGNORECASE):
                     all_errors.append({
                         'pos': position,
                         'where': f"{expected9_title} - Test Scenario {position}",
