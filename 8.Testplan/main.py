@@ -1,7 +1,7 @@
 import json
 import os
-import sys
 import re
+import sys
 
 def is_meaningful_content(t):
     if not t or not isinstance(t, str):
@@ -25,91 +25,121 @@ def check_section_8(file_path):
         sections = data.get('sections', [])
         all_errors_table = []
         target_section = None
-        expected_title = "8. Test Plan"
+        standard_title = "8. Test Plan"
+        stable_redirect = "Test Plan"
 
-        # 1. Robust Section Discovery
+        # 1. IDENTIFICATION (by static title body)
         for section in sections:
             title = section.get('title', '').strip()
             title_lower = title.lower()
             
-            # Match if contains "8" and "test"
-            if "8" in title_lower and "test" in title_lower:
-                # Strictly exclude subsections like 8.1, 8.2, 8.4, 81.1 etc.
-                # If there's a digit immediately following the 8. (e.g. 8.1), it's a subsection.
-                if re.search(r'^8\.\d+', title) or re.search(r'^\d+\.\d+(\.\d+)?', title):
-                    # But if it's JUST "8." or "8. Test Plan", keep it.
-                    # We check if the pattern is specifically a subsection pattern.
-                    if re.match(r'^\d+\.\d+(\.\d+)?$', title.split(':')[0].strip()):
-                         continue
-
+            # Identify by keywords "test" and "plan"
+            if "test" in title_lower and "plan" in title_lower:
+                # Exclude numerical subsections (e.g. 8.1, 8.2)
+                # If there's a dot and content immediately after a number prefix that isn't just "8.", skip.
+                if re.search(r'^\d+\.\d+', title):
+                    continue
                 target_section = section
                 break
 
         if not target_section:
             return [{
-                "where": expected_title,
+                "where": standard_title,
                 "what": "Section 8 missing",
-                "suggestion": f"Add {expected_title}",
-                "redirect_text": "Test Plan",
-                "severity": "high"
+                "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
+                "severity": "High"
             }]
 
-        actual_title = target_section.get('title', '').strip()
-        # Clean redirect title (remove leading numbers and trailing colons)
-        redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or "Test Plan"
+        # IDENTIFICATION SUCCESSFUL
+        found_title = target_section.get('title', '').strip()
+        title_lower = found_title.lower()
+
+        # Detect the title body
+        has_body = "test" in title_lower and "plan" in title_lower
+
+        # Identify any leading number prefix (handles 8., 8.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("8.")
+
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                all_errors_table.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '8.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '8.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_body and not has_any_number:
+                # Title body is correct but section number "8." is missing entirely
+                all_errors_table.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": standard_title,
+                    "what": "Section 8 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
+
+        actual_title = found_title
+        # Clean redirect: Remove leading numbers and trailing colons
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
         
-        # Title Validation - STOP if wrong
-        if actual_title.replace(':', '').strip().lower() != expected_title.replace(':', '').strip().lower():
-             return [{
-                "where": expected_title,
-                "what": "Section 8 missing",
-                "suggestion": f"Add {expected_title}",
-                "redirect_text": "Test Plan",
-                "severity": "high"
-            }]
-        else:
-            # Content Check
-            has_meaningful = False
-            found_text_sample = ""
-            
-            # Check 'test_plan' first, then fallback to 'content'
-            items_to_check = target_section.get('test_plan', [])
-            if not items_to_check:
-                items_to_check = target_section.get('content', [])
-            
-            # Handle if it's a list or string
-            check_list = items_to_check if isinstance(items_to_check, list) else ([items_to_check] if items_to_check else [])
+        # Content Check
+        has_meaningful = False
+        found_text_sample = ""
+        
+        # Check 'test_plan' first, then fallback to 'content'
+        test_plan_data = target_section.get('test_plan', [])
+        if not test_plan_data:
+            test_plan_data = target_section.get('content', [])
+        
+        # Handle if it's a list or string
+        check_list = test_plan_data if isinstance(test_plan_data, list) else ([test_plan_data] if test_plan_data else [])
 
-            for item in check_list:
-                text = ""
-                if isinstance(item, dict):
-                    # Images NO LONGER count as content (Consistent with Section 5/7)
-                    text = item.get('text', '')
-                elif isinstance(item, list):
-                    text = " ".join([str(i) for i in item if i])
-                else:
-                    text = str(item)
-                    
-                if is_meaningful_content(text):
-                    has_meaningful = True
-                    break
-                elif text.strip() and not found_text_sample:
-                     found_text_sample = text.strip()
+        for item in check_list:
+            text = ""
+            if isinstance(item, dict):
+                # Images NO LONGER count as content (Consistent with Section 5/7)
+                text = item.get('text', '')
+            elif isinstance(item, list):
+                text = " ".join([str(i) for i in item if i])
+            else:
+                text = str(item)
+                
+            if is_meaningful_content(text):
+                has_meaningful = True
+                break
+            elif text.strip() and not found_text_sample:
+                 found_text_sample = text.strip()
 
-            if not has_meaningful:
-               all_errors_table.append({
-                   "where": actual_title, 
-                   "what": "Test Plan content is missing or non-descriptive", 
-                   "suggestion": "Add test plan introductory content", 
-                   "redirect_text": redirect_title,
-                   "severity": "high"
-               })
+        if not has_meaningful:
+           all_errors_table.append({
+               "where": actual_title, 
+               "what": "Test Plan content is missing or non-descriptive", 
+               "suggestion": "Add test plan introductory content", 
+               "redirect_text": redirect_val,
+               "severity": "high"
+           })
         
         # Final Processing: Sort findings by severity: high > medium > low
         findings = []
         if all_errors_table:
-            severity_priority = {"high": 0, "medium": 1, "low": 2}
-            all_errors_table.sort(key=lambda x: severity_priority.get(x.get('severity', 'medium'), 1))
+            severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+            all_errors_table.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
             
             for error in all_errors_table:
                 findings.append({
@@ -117,7 +147,7 @@ def check_section_8(file_path):
                     "what": error['what'],
                     "suggestion": error['suggestion'],
                     "redirect_text": error.get('redirect_text', ''),
-                    "severity": error.get('severity', 'medium')
+                    "severity": error.get('severity', 'Medium')
                 })
 
         return findings if findings else None

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 
 def is_valid_content(t):
@@ -16,7 +17,7 @@ def is_valid_content(t):
 
 def check_section_5(file_path):
     """
-    Validate Section 5 (DUT Configuration) using Simplified Concept.
+    Validate Section 5 (DUT Configurationdetails) using Simplified Concept.
     """
     if not os.path.exists(file_path):
         return [{"where": "Section 5", "what": "File not found", "suggestion": "Provide valid path"}]
@@ -27,55 +28,79 @@ def check_section_5(file_path):
         
         sections = data.get('sections', [])
         target_section = None
-        stable_redirect = "5. DUT Configuration"
-        standard_title = "5. DUT Configuration:"
+        standard_title = "5. DUT Configurationdetails"
+        stable_redirect = "DUT Configurationdetails"
         
-        # 1. IDENTIFICATION (Fuzzy & Number-based)
+        # 1. IDENTIFICATION (by static title body)
         for section in sections:
             title = section.get('title', '').strip()
             title_lower = title.lower()
             
-            # Starts with "5. " or contains keywords "DUT" AND "Configuration"
-            if title.startswith('5. ') or ('dut' in title_lower and 'configuration' in title_lower):
-                target_section = section
-                break
-            # Fallback to ID
-            if section.get('section_id') == 'SEC-05':
+            # Identify by exact static title body keywords
+            if 'dut' in title_lower and 'configuration' in title_lower:
                 target_section = section
                 break
 
         if not target_section:
             return [{
-                "where": "5. DUT Configuration",
+                "where": standard_title,
                 "what": "Section 5 missing",
                 "suggestion": f"Expected: '{standard_title}'",
                 "redirect_text": stable_redirect,
                 "severity": "High"
             }]
         
-        # STRICT TITLE VALIDATION (BLOCKING)
+        # IDENTIFICATION SUCCESSFUL
         found_title = target_section.get('title', '').strip()
-        # It MUST start with "5." and contain "DUT Configuration" (case-insensitive)
         title_lower = found_title.lower()
-        if not (found_title.startswith("5.") and "dut configuration" in title_lower):
-             return [{
-                "where": found_title if found_title else "Section 5",
-                "what": "Section 5 missing",
-                "suggestion": f"Expected: '{standard_title}'",
-                "redirect_text": stable_redirect,
-                "severity": "High"
-            }]
 
-        actual_title = target_section.get('title', '').strip()
+        # Detect the title body
+        has_dut_body = "dut" in title_lower and "configuration" in title_lower
+
+        # Identify any leading number prefix (handles 5., 5.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("5.")
+
         errors = []
-        
-        # 3. CONTENT VALIDATION
+        if not (has_correct_num and has_dut_body):
+            if has_dut_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '5.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '5.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_dut_body and not has_any_number:
+                # Title body is correct but section number "5." is missing entirely
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": standard_title,
+                    "what": "Section 5 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
+
+        actual_title = found_title
+        # Clean redirect: Remove leading numbers and trailing colons
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
+
+        # Check content
         has_valid_content = False
         found_text_sample = ""
-        
-        import re
-        # Clean redirect: Remove trailing colon, keep leading numbers if any
-        redirect_val = actual_title.replace(':', '').strip() or stable_redirect
 
         # Check specific field 'dut_configuration' first
         dut_conf_list = target_section.get('dut_configuration', [])
@@ -112,6 +137,10 @@ def check_section_5(file_path):
                 "redirect_text": redirect_val,
                 "severity": "High"
             })
+            
+        # Sort by severity
+        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        errors.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
             
         return errors
 

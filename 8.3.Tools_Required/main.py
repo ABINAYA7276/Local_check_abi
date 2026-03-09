@@ -1,7 +1,7 @@
 import json
 import os
-import sys
 import re
+import sys
 
 def check_section_8_3(file_path):
     """
@@ -17,53 +17,82 @@ def check_section_8_3(file_path):
             data = json.load(f)
         
         sections = data.get('sections', [])
-        candidates = []
-        expected_title = "8.3. Tools Required"
+        target_section = None
+        standard_title = "8.3. Tools Required"
+        stable_redirect = "Tools Required"
         
-        # 1. Identify Section 8.3 candidates
-        # Exclusion keywords to avoid other sections
-        other_section_keywords = [
-            'itsar section', 'security requirement', 'requirement description', 
-            'dut confirmation', 'dut configuration', 'precondition', 
-            'test objective', 'test plan', 'test execution', 'test case'
-        ]
-
+        # 1. IDENTIFICATION (by static title body)
         for section in sections:
             title = section.get('title', '').strip()
-            sec_id = section.get('section_id', '')
-            
             title_lower = title.lower()
-            # Match '8.3', 'tools', and 'required' in the title
-            if '8.3' in title and 'tools' in title_lower and 'required' in title_lower:
-                candidates.append(section)
+            
+            # Identify by keywords: 'tools' and 'required'
+            if 'tools' in title_lower and 'required' in title_lower:
+                # Exclude numerical subsections (e.g. 8.3.1)
+                if re.search(r'^\d+\.\d+\.\d+', title):
+                    continue
+                target_section = section
+                break
         
-        if not candidates:
+        if not target_section:
              return [{
-                "where": expected_title,
+                "where": standard_title,
                 "what": "Section 8.3 missing",
-                "suggestion": f"Add {expected_title}",
-                "severity": "high"
+                "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
+                "severity": "High"
             }]
         
-        primary_section = candidates[0]
-        actual_title = primary_section.get('title', '').strip()
-        # Clean redirect title (remove leading numbers and "Required")
-        redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).strip() or actual_title
-        if "tools" in redirect_title.lower() and "required" in redirect_title.lower():
-            redirect_title = "Tools Required"
-        errors = []
+        # IDENTIFICATION SUCCESSFUL
+        found_title = target_section.get('title', '').strip()
+        title_lower = found_title.lower()
 
-        # 2. Title Validation
-        if actual_title.replace(':', '').strip().lower() != expected_title.replace(':', '').strip().lower():
-             return [{
-                "where": expected_title,
-                "what": "Section 8.3 missing",
-                "suggestion": f"Add {expected_title}",
-                "severity": "high"
-            }]
+        # Detect the title body
+        has_body = 'tools' in title_lower and 'required' in title_lower
+
+        # Identify any leading number prefix (handles 8.3., 8.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("8.3.")
+
+        errors = []
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '8.3.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '8.3.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_body and not has_any_number:
+                # Title body is correct but section number "8.3." is missing entirely
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": standard_title,
+                    "what": "Section 8.3 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
+
+        actual_title = found_title
+        # Clean redirect: Remove leading numbers/dots and trailing colons
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
         
         # 3. Tools Content Validation
-        tools = primary_section.get('tools', [])
+        tools = target_section.get('tools', [])
         
         def is_meaningful(t):
             t_str = t.get('tool', '').strip() if isinstance(t, dict) else str(t).strip()
@@ -77,10 +106,11 @@ def check_section_8_3(file_path):
                 "where": actual_title,
                 "what": "content missing. Found empty tool entries.",
                 "suggestion": "Provide the name and version for each required tool (e.g., 'Putty v (0.83)').",
-                "redirect_text": redirect_title,
-                "severity": "high"
+                "redirect_text": redirect_val,
+                "severity": "High"
             })
-             return errors # Stop here if everything is empty
+             # Only return if we truly have nothing to check version-wise
+             if not tools: return errors 
         
         # 4. Detail Validation (Only if some content exists)
         version_pattern = r'v\s*\(?\s*\d+(\.\d+)*\s*\)?'
@@ -89,11 +119,11 @@ def check_section_8_3(file_path):
                 
                 if not val:
                     errors.append({
-                        "where": f"{actual_title} - Tool {idx+1}",
+                        "where": f"{standard_title} - Tool {idx+1}",
                         "what": f"Tool {idx+1} entry is empty",
                         "suggestion": "Provide the tool name and version (e.g., 'Putty v (0.83)')",
-                        "redirect_text": redirect_title,
-                        "severity": "high"
+                        "redirect_text": redirect_val,
+                        "severity": "High"
                     })
                     continue
 
@@ -125,25 +155,25 @@ def check_section_8_3(file_path):
                          suggested_val = val.replace('()', '(Version Number)') if '()' in val else f"{val} (Version Number)"
 
                      errors.append({
-                         "where": f"Section 8.3 - Tools Required - {val}",
+                         "where": f"{standard_title} - {val}",
                          "what": error_msg,
                          "suggestion": f"Expected: '{suggested_val}'",
-                         "redirect_text": redirect_title, 
-                         "severity": "medium"
+                         "redirect_text": redirect_val, 
+                         "severity": "Medium"
                     })
                 elif tool_name_missing:
                      errors.append({
-                         "where": f"Section 8.3 - Tools Required - {val}",
+                         "where": f"{standard_title} - {val}",
                          "what": f"Tool name missing: Found '{val}' in Section 8.3 Tools Required",
                          "suggestion": f"Expected: '[Tool Name] {val}'",
-                         "redirect_text": redirect_title,
-                         "severity": "high"
+                         "redirect_text": redirect_val,
+                         "severity": "High"
                     })
 
         return errors
 
     except Exception as e:
-        return [{"where": "Section 8.3", "what": f"Error: {e}", "severity": "high"}]
+        return [{"where": "Section 8.3", "what": f"Error: {e}", "severity": "High"}]
 
 if __name__ == "__main__":
     json_path = sys.argv[1] if len(sys.argv) > 1 else 'dutjson.json'
@@ -151,8 +181,8 @@ if __name__ == "__main__":
     # Save to output.json (silent)
     try:
         # Sort by severity
-        severity_priority = {"high": 0, "medium": 1, "low": 2}
-        result.sort(key=lambda x: severity_priority.get(x.get('severity', 'medium'), 1))
+        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        result.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
         
         with open('output.json', 'w', encoding='utf-8') as f:
             json.dump(result if result else [], f, indent=4)

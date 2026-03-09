@@ -38,12 +38,8 @@ def check_section_3(file_path):
             title = section.get('title', '').strip()
             title_lower = title.lower()
             
-            # Starts with "3. " or contains keywords
-            if title.startswith('3. ') or ('requirement' in title_lower and 'description' in title_lower):
-                target_section = section
-                break
-            # Fallback to ID
-            if section.get('section_id') == 'SEC-03':
+            # Relaxed identification
+            if 'requirement' in title_lower and 'description' in title_lower:
                 target_section = section
                 break
 
@@ -55,20 +51,53 @@ def check_section_3(file_path):
                 "severity": "High"
             }]
         
-        # STRICT TITLE VALIDATION (BLOCKING)
+        # IDENTIFICATION SUCCESSFUL
         found_title = target_section.get('title', '').strip()
-        # It MUST start with "3." and contain "Requirement Description" (case-insensitive)
         title_lower = found_title.lower()
-        if not (found_title.startswith("3.") and "requirement description" in title_lower):
-             return [{
-                "where": found_title if found_title else "Section 3",
-                "what": "Section 3 missing",
-                "suggestion": f"Expected: '{standard_title}'",
-                "severity": "High"
-            }]
-        
-        actual_title = target_section.get('title', '').strip()
+
+        # Detect the title body
+        has_req_body = "requirement" in title_lower and "description" in title_lower
+
+        # Identify any leading number prefix (handles 3., 3.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("3.")
+
         errors = []
+        if not (has_correct_num and has_req_body):
+            if has_req_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '3.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '3.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_req_body and not has_any_number:
+                # Title body is correct but section number "3." is missing entirely
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": standard_title,
+                    "what": "Section 3 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
+        
+        actual_title = found_title
+        # Clean redirect: Remove leading numbers and trailing colons
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
         
         # 2. TITLE VALIDATION (Skipped as per Simplified Concept)
         # We trust the header is correct.
@@ -114,9 +143,13 @@ def check_section_3(file_path):
                 "where": actual_title,
                 "what": f"content missing. Found: '{found_text_sample}'",
                 "suggestion": "Provide the requirement description details.",
-                "redirect_text": stable_redirect,
+                "redirect_text": redirect_val,
                 "severity": "High"
             })
+            
+        # Sort by severity
+        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        errors.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
             
         return errors
 

@@ -22,7 +22,7 @@ def main():
     
     json_file = Path(args.json_file)
     if not json_file.is_file():
-        print(json.dumps([{"where": "System", "what": f"File not found: {json_file}", "severity": "high"}]))
+        print(json.dumps([{"where": "System", "what": f"File not found: {json_file}", "severity": "High"}]))
         sys.exit(1)
 
     if hasattr(sys.stdout, 'reconfigure'):
@@ -40,7 +40,7 @@ def main():
         sections = data.get('sections', [])
         test_id_pattern = re.compile(r'(\d+(?:\s*[\. ]\s*\d+){3,})')
 
-        # 1. Get base IDs (Aligned with 8.4 logic but more explicit for cross-check)
+        # 1. Get base IDs (Aligned with 8.4 logic)
         base_id_fp = None
         fp_content = data.get('frontpage_data', {}).get('content', [])
         for item in fp_content:
@@ -67,223 +67,185 @@ def main():
                             break
                     if base_id_sec2: break
             if base_id_sec2: break
-
-        # Determine effective base_id for validation (Section 2 is master as requested)
+        
         base_id = base_id_sec2 or base_id_fp
+        standard_title = "8.1. Number of Test Scenarios"
+        redirect_stable = "Number of Test Scenarios"
         
-        # Report Base ID issues
-        expected81_title = "8.1. Number of Test Scenarios"
-        if not base_id:
-            all_errors_table.append({
-                'where': f"{expected81_title}:",
-                'what': "Base ID missing: Could not find valid ID (e.g., 1.1.2) in Section 2 or Front Page.",
-                'suggestion': "Ensure Section 2 or the Front Page contains the Requirement ID.",
-                'severity': 'high'
-            })
-        elif base_id_fp and base_id_sec2 and base_id_sec2 != base_id_fp:
-            all_errors_table.append({
-                'where': f"{expected81_title}:",
-                'what': f"Base ID mismatch: Section 2 shows '{base_id_sec2}' but Front Page shows '{base_id_fp}'.",
-                'suggestion': "Ensure the Requirement ID is consistent throughout the document.",
-                'severity': 'medium'
-            })
-
-        # 2. Check for Section 8.1
-        section81_found = False
-        section81_has_content = False
-        expected81_title = "8.1. Number of Test Scenarios"
-        redirect_title = "Number of Test Scenarios"
-        
+        # 2. Check for Section 8.1 Identification
+        target_section = None
         for section in sections:
-            title = section.get('title', '').strip()
-            sec_id = section.get('section_id', '')
-
-            if sec_id == 'SEC-09' or re.search(r'8\.1|Number\s+of\s+Test\s+Scenarios', title, re.IGNORECASE):
-                section81_found = True
-                
-                # Title Validation
-                if title.replace(':', '').strip().lower() != expected81_title.replace(':', '').strip().lower():
-                    all_errors_table.append({
-                        'where': f"{expected81_title}:",
-                        'what': f"Incorrect title: Found '{title}'",
-                        'suggestion': f"Change title to exactly '{expected81_title}:'",
-                        'redirect_text': redirect_title,
-                        'severity': 'medium'
-                    })
-                
-                # Use redirect title from actual if possible for consistency
-                actual_redirect = re.sub(r'^\d+\.\d?\.\s*', '', title).strip().replace(':', '') or redirect_title
-
-                # Process Content
-                scenario_tracker = {}
-                position = 0
-                
-                # Normalize data sources (test_scenarios or content)
-                scenarios_in_json = section.get('test_scenarios', [])
-                content_items = section.get('content', [])
-                
-                parsed_scenarios = []
-                if scenarios_in_json:
-                    # STRUCTURED MODE: Each item is one scenario
-                    for item in scenarios_in_json:
-                        if isinstance(item, dict):
-                            id_text = item.get('test_scenario', '').strip()
-                            desc_text = item.get('description', '').strip()
-                            parsed_scenarios.append({'header': id_text, 'desc': desc_text})
-                        else:
-                            parsed_scenarios.append({'header': str(item).strip(), 'desc': ''})
-                else:
-                    # UNSTRUCTURED MODE: Split by ID pattern
-                    raw_text_blocks = []
-                    for item in content_items:
-                        txt = item.get('text', '') if isinstance(item, dict) else str(item)
-                        if txt.strip(): raw_text_blocks.append(txt.strip())
-                    
-                    # Joining and re-splitting to handle IDs correctly
-                    full_text = " ".join(raw_text_blocks)
-                    # Use a more flexible split to handle spaces in IDs
-                    parts = re.split(r'(?=\b\d+(?:\s*[\. ]\s*\d+){3,}\b)', full_text)
-                    for p in parts:
-                        p = p.strip()
-                        if not p: continue
-                        m = test_id_pattern.search(p)
-                        if m:
-                            raw_id = m.group(1)
-                            id_pos = p.find(raw_id)
-                            header = p[:id_pos+len(raw_id)].strip()
-                            desc = p[id_pos+len(raw_id):].strip()
-                            parsed_scenarios.append({'header': header, 'desc': desc})
-                        else:
-                            # If no ID but text exists, maybe it belongs to previous or is a loose block
-                            if parsed_scenarios:
-                                parsed_scenarios[-1]['desc'] += " " + p
-                            else:
-                                parsed_scenarios.append({'header': '', 'desc': p})
-
-                for sc in parsed_scenarios:
-                    header = sc['header']
-                    desc = sc['desc']
-                    full_sc_text = header + " " + desc
-
-                    # Check for missing space in 'Test Scenario' field/header only
-                    if re.search(r'TestScenario', header, re.IGNORECASE):
-                        all_errors_table.append({
-                            'where': f"{expected81_title}: - Test Scenario {position + 1}",
-                            'what': "Incorrect format: Found 'TestScenario' (missing space)",
-                            'suggestion': "Expected: 'Test Scenario'",
-                            'redirect_text': actual_redirect,
-                            'severity': 'low'
-                        })
-                    
-                    matches = test_id_pattern.findall(full_sc_text)
-                    if not matches:
-                        # Check labels if no numeric ID found
-                        if any(l in (header + " " + desc).lower() for l in ['test scenario', 'tc', 'test case']):
-                            section81_has_content = True
-                            position += 1
-                            exp_id = f"{base_id}.{position}" if base_id else f"X.{position}"
-                            where_ref = f"8.1. Number of Test Scenarios: - Test Scenario {exp_id}"
-                            
-                            all_errors_table.append({
-                                'where': where_ref,
-                                'what': f"ID missing in content. in Test Scenario {exp_id}",
-                                'suggestion': f"Expected: 'Test Scenario {exp_id}: [Description]'",
-                                'redirect_text': actual_redirect,
-                                'severity': 'medium'
-                            })
-                        continue
-                    
-                    section81_has_content = True
-                    # In structured mode, we expect exactly 1 ID per block
-                    # If we found multiple in a single 'desc', we treat the first one as the primary
-                    raw_id = matches[0]
-                    # Normalize ID by removing all spaces
-                    test_id = re.sub(r'[\s]+', '', raw_id)
-                    position += 1
-                    exp_id = f"{base_id}.{position}" if base_id else test_id
-                    where_ref = f"8.1. Number of Test Scenarios: - Test Scenario {exp_id}"
-                    
-                    # Content Check (Consolidated)
-                    # For Section 8.1, content is the description
-                    # Clean the ID/Label part from the beginning of the header/desc block
-                    combined = (header + " " + desc).strip()
-                    id_idx = combined.find(raw_id)
-                    content_after_id = combined[id_idx + len(raw_id):].strip()
-                    content_after_id = re.sub(r'^[:\.\s]+', '', content_after_id)
-                    
-                    has_meaningful_content = is_meaningful_content(content_after_id)
-                    
-                    # Reporting (Aligned with 8.4)
-                    if not has_meaningful_content:
-                        all_errors_table.append({
-                            'where': where_ref,
-                            'what': f"test scenario content missing. in Test Scenario {exp_id}",
-                            'suggestion': f"Add description for Scenario {exp_id}",
-                            'redirect_text': actual_redirect,
-                            'severity': 'high'
-                        })
-                    
-                    # Sequence/Alignment (Normalize both for comparison)
-                    norm_test_id = re.sub(r'[\s]+', '', test_id)
-                    norm_exp_id = re.sub(r'[\s]+', '', exp_id)
-                    
-                    if norm_test_id != norm_exp_id:
-                        if base_id and ".".join(norm_test_id.split(".")[:3]) != base_id.replace(' ', ''):
-                             all_errors_table.append({
-                                 'where': where_ref,
-                                 'what': f"Base ID mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
-                                 'suggestion': f"Expected Base ID: {base_id}",
-                                 'redirect_text': actual_redirect,
-                                 'severity': 'low'
-                             })
-                        else:
-                             all_errors_table.append({
-                                 'where': where_ref,
-                                 'what': f"ID alignment mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
-                                 'suggestion': f"Correct ID to {exp_id}",
-                                 'redirect_text': actual_redirect,
-                                 'severity': 'low'
-                             })
+            title = section.get('title', '').strip().replace('\n', ' ')
+            title_lower = title.lower()
+            if 'number' in title_lower and 'test' in title_lower and 'scenario' in title_lower:
+                target_section = section
                 break
 
-        if not section81_found:
-            all_errors_table.append({'where': expected81_title + ":", 'what': "Section 8.1 missing", 'suggestion': f"Add Section {expected81_title}:", 'severity': 'high'})
-        elif not section81_has_content:
-            all_errors_table.append({'where': expected81_title + ":", 'what': "test scenario content missing. in 8.1. Number of Test Scenarios", 'suggestion': "Add test scenarios.", 'redirect_text': redirect_title, 'severity': 'high'})
+        if not target_section:
+            print(json.dumps([{
+                "where": standard_title,
+                "what": "Section 8.1 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "severity": "High"
+            }], indent=4))
+            sys.exit(0)
+
+        section = target_section
+        found_title = section.get('title', '').strip().replace('\n', ' ')
+        # print(f"DEBUG: Found Title: {found_title}")
+        title_lower = found_title.lower()
+
+        # 3. TITLE VALIDATION
+        has_body = 'number' in title_lower and 'test' in title_lower and 'scenario' in title_lower
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("8.1.")
+
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                wrong_num = num_prefix_match.group(1).strip()
+                all_errors_table.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '8.1.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '8.1.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_body and not has_any_number:
+                all_errors_table.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # If we have the body, we proceed. If not, missing.
+                return print(json.dumps([{
+                    "where": standard_title,
+                    "what": "Section 8.1 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }], indent=4))
+
+        # 4. CONTENT VALIDATION
+        actual_redirect = re.sub(r'^[\d\.]+\s*', '', found_title).replace(':', '').strip() or redirect_stable
+        section81_has_content = False
+        position = 0
+        
+        scenarios_in_json = section.get('test_scenarios', [])
+        content_items = section.get('content', [])
+        
+        parsed_scenarios = []
+        if scenarios_in_json:
+            for item in scenarios_in_json:
+                if isinstance(item, dict):
+                    id_val = item.get('test_scenario', '')
+                    desc_val = item.get('description', '')
+                    # Aggregate strings/lists
+                    h = " ".join([str(i) for i in id_val if i]).strip() if isinstance(id_val, list) else str(id_val).strip()
+                    d = " ".join([str(i) for i in desc_val if i]).strip() if isinstance(desc_val, list) else str(desc_val).strip()
+                    parsed_scenarios.append({'header': h, 'desc': d})
+                else:
+                    parsed_scenarios.append({'header': str(item).strip(), 'desc': ''})
+        else:
+            raw_text_blocks = []
+            for item in content_items:
+                txt = item.get('text', '') if isinstance(item, dict) else str(item)
+                if txt.strip(): raw_text_blocks.append(txt.strip())
+            
+            full_text = " ".join(raw_text_blocks)
+            parts = re.split(r'(?=\b\d+(?:\s*[. ]\s*\d+){3,}\b)', full_text)
+            for p in parts:
+                p = p.strip()
+                if not p: continue
+                m = test_id_pattern.search(p)
+                if m:
+                    raw_id = m.group(1)
+                    id_pos = p.find(raw_id)
+                    parsed_scenarios.append({'header': p[:id_pos+len(raw_id)].strip(), 'desc': p[id_pos+len(raw_id):].strip()})
+                else:
+                    if parsed_scenarios: parsed_scenarios[-1]['desc'] += " " + p
+                    else: parsed_scenarios.append({'header': '', 'desc': p})
+
+        # Validate parsed scenarios
+        for item in parsed_scenarios:
+            position += 1
+            section81_has_content = True
+            header = item['header']
+            desc = item['desc']
+            combined = (header + " " + desc).strip()
+            id_match = test_id_pattern.search(combined)
+            
+            exp_id = f"{base_id}.{position}" if base_id else f"[ID].{position}"
+            where_ref = f"{standard_title} - Test Scenario {position}"
+
+            # Space Check
+            if re.search(r'TestScenario', header, re.IGNORECASE):
+                all_errors_table.append({
+                    "where": where_ref, "what": f"Incorrect format: Found 'TestScenario' (missing space)",
+                    "suggestion": "Expected: 'Test Scenario'", "redirect_text": actual_redirect, "severity": "Low"
+                })
+
+            if not id_match:
+                all_errors_table.append({
+                    "where": where_ref, "what": f"test scenario ID missing. Found: '{header[:30]}'",
+                    "suggestion": f"Expected: 'Test Scenario {exp_id}:'", "redirect_text": actual_redirect, "severity": "High"
+                })
+                continue
+
+            found_id_raw = id_match.group(1)
+            found_id = re.sub(r'[\s]+', '', found_id_raw)
+            # Alignment Check
+            if base_id and not found_id.startswith(base_id):
+                all_errors_table.append({
+                    "where": where_ref, "what": f"Base ID mismatch: Found '{found_id}'.",
+                    "suggestion": f"Expected Base ID: {base_id}", "redirect_text": actual_redirect, "severity": "Low"
+                })
+            elif found_id != exp_id:
+                all_errors_table.append({
+                    "where": where_ref, "what": f"ID alignment mismatch: Found '{found_id}'.",
+                    "suggestion": f"Expected: {exp_id}", "redirect_text": actual_redirect, "severity": "Low"
+                })
+
+            # Content Check
+            clean_desc = re.sub(r'^[:.\s]+', '', desc)
+            if not is_meaningful_content(clean_desc):
+                all_errors_table.append({
+                    "where": where_ref, "what": f"test scenario content missing. Found ID '{found_id_raw}'.",
+                    "suggestion": f"Add description for Test Scenario {found_id}", "redirect_text": actual_redirect, "severity": "High"
+                })
+
+        if not section81_has_content:
+            all_errors_table.append({
+                "where": standard_title, "what": "test scenario content missing. in 8.1. Number of Test Scenarios:",
+                "suggestion": "Add test scenarios.", "redirect_text": actual_redirect, "severity": "High"
+            })
 
     except Exception as e:
-        all_errors_table.append({'where': "Section 8.1 Processing", 'what': f"Error: {str(e)}", 'suggestion': "Check JSON format", 'severity': 'high'})
+        all_errors_table.append({"where": "Section 8.1", "what": f"Error: {e}", "suggestion": "Check JSON format", "severity": "High"})
 
-    # Sorting (Natural Sort by Scenario ID)
-    severity_order = {"high": 0, "medium": 1, "low": 2}
-    
+    # SORTING
+    severity_order = {"High": 0, "Medium": 1, "Low": 2}
     def get_sort_key(error):
         where = error.get('where', '')
-        # Handle Section title/missing errors first
-        if where.endswith(':'):
-             return (-1, [], severity_order.get(error.get("severity", "low"), 2))
-            
-        # Extract scenario ID for natural sorting (e.g., 1.1.1.2 before 1.1.1.10)
-        match = re.search(r'Test Scenario ([\d\s\.]+)', where)
-        if match:
-            id_str = match.group(1).replace(' ', '')
-            id_parts = [int(x) for x in id_str.split('.') if x.strip().isdigit()]
-            return (0, id_parts, severity_order.get(error.get("severity", "low"), 2))
-            
-        # Fallback for any other errors
-        return (1, [where], severity_order.get(error.get("severity", "low"), 2))
+        if where == standard_title: return (-1, [], severity_order.get(error.get("severity", "Low"), 2))
+        match = re.search(r'Test Scenario (\d+)', where)
+        if match: return (0, [int(match.group(1))], severity_order.get(error.get("severity", "Low"), 2))
+        return (1, [where], severity_order.get(error.get("severity", "Low"), 2))
 
     all_errors_table.sort(key=get_sort_key)
-
-    # Final Output
+    
+    # Final cleanup of findings
     findings = []
-    for error in all_errors_table:
+    for err in all_errors_table:
         findings.append({
-            "where": error['where'],
-            "what": error['what'],
-            "suggestion": error['suggestion'],
-            "redirect_text": error.get('redirect_text', ''),
-            "severity": error.get('severity', 'low')
+            "where": err['where'],
+            "what": err['what'],
+            "suggestion": err['suggestion'],
+            "redirect_text": err.get('redirect_text', ''),
+            "severity": err.get('severity', 'Low')
         })
 
     print(json.dumps(findings, indent=4))

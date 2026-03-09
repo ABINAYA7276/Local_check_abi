@@ -1,7 +1,7 @@
 import json
 import os
-import sys
 import re
+import sys
 
 def check_section_8_2(file_path):
     """
@@ -16,64 +16,103 @@ def check_section_8_2(file_path):
             data = json.load(f)
         
         sections = data.get('sections', [])
-        candidates = []
-        errors = []
-        expected_title = "8.2. Test Bed Diagram"
+        target_section = None
+        standard_title = "8.2. Test Bed Diagram"
+        stable_redirect = "Test Bed Diagram"
 
+        # 1. IDENTIFICATION (by static title body)
         for section in sections:
             title = section.get('title', '').strip()
             title_lower = title.lower()
             
-            # Match keywords: '8.2', 'test', 'bed', 'diagram'
-            if '8.2' in title and 'test' in title_lower and 'bed' in title_lower and 'diagram' in title_lower:
-                candidates.append(section)
+            # Identify by keywords: 'test', 'bed', 'diagram'
+            if 'test' in title_lower and 'bed' in title_lower and 'diagram' in title_lower:
+                target_section = section
+                break
         
-        if not candidates:
+        if not target_section:
             return [{
-                "where": expected_title, 
+                "where": standard_title, 
                 "what": "Section 8.2 missing", 
-                "suggestion": f"Add {expected_title}", 
-                "severity": "high"
+                "suggestion": f"Expected: '{standard_title}'", 
+                "redirect_text": stable_redirect,
+                "severity": "High"
             }]
         
-        primary_section = candidates[0]
-        actual_title = primary_section.get('title', '').strip()
-        # Clean Redirect Text: Remove leading number, spaces, or colon
-        redirect_title = re.sub(r'^\d+\.\d?\.\s*', '', actual_title).strip()
-        
-        # Title Validation
-        norm_actual = actual_title.replace(':', '').strip().lower()
-        norm_expected = expected_title.replace(':', '').strip().lower()
-        
-        if norm_actual != norm_expected:
-             return [{
-                "where": expected_title,
-                "what": "Section 8.2 missing",
-                "suggestion": f"Add {expected_title}",
-                "severity": "high"
-            }]
+        # IDENTIFICATION SUCCESSFUL
+        found_title = target_section.get('title', '').strip()
+        title_lower = found_title.lower()
 
-        # Content Validation
-        content = primary_section.get('content', [])
+        # Detect the title body
+        has_body = 'test' in title_lower and 'bed' in title_lower and 'diagram' in title_lower
+
+        # Identify any leading number prefix (handles 8.2., 8.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("8.2.")
+        
+        # Derive potential prefix for figure ID checks (e.g. "8.2")
+        derived_prefix = "8.2"
+        if num_prefix_match:
+            raw_prefix = num_prefix_match.group(1).strip().strip('.')
+            # Normalize to X.Y if possible
+            parts = [p for p in re.split(r'[\s\.]+', raw_prefix) if p]
+            if len(parts) >= 2: derived_prefix = ".".join(parts[:2])
+
         errors = []
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '8.2.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '8.2.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_body and not has_any_number:
+                # Title body is correct but section number "8.2." is missing entirely
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": standard_title,
+                    "what": "Section 8.2 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
+
+        actual_title = found_title
+        # Clean Redirect Text: Remove leading number, spaces, or colon
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
+        
+        # Content Validation
+        content = target_section.get('content', [])
         
         has_image = any(isinstance(item, dict) and item.get('type') == 'image' for item in content)
-        
         if not has_image:
             errors.append({
-                "where": f"{actual_title}",
+                "where": actual_title,
                 "what": "Test Bed Diagram image is missing.",
                 "suggestion": "Add the diagram image in Section 8.2",
-                "redirect_text": redirect_title,
-                "severity": "high"
+                "redirect_text": redirect_val,
+                "severity": "High"
             })
         
         figure_caption_pattern = re.compile(r'^[Ff]igure\s+([\d\.]+)\s*([-–: ])\s*(.*)$', re.IGNORECASE)
-        
-        img_found = False
+        expected_fig_id = f"{derived_prefix}.1"
+
         for i, item in enumerate(content):
             if isinstance(item, dict) and item.get('type') == 'image':
-                img_found = True
                 # Check for caption following the image
                 has_caption = False
                 caption_text = ""
@@ -93,36 +132,35 @@ def check_section_8_2(file_path):
                     errors.append({
                         "where": f"{actual_title} - Figure Check",
                         "what": "Figure caption is missing under the diagram.",
-                        "suggestion": "Add caption: 'Figure 8.2.1- Test Bed Diagram'",
-                        "redirect_text": redirect_title,
-                        "severity": "high"
+                        "suggestion": f"Add caption: 'Figure {expected_fig_id}- Test Bed Diagram'",
+                        "redirect_text": redirect_val,
+                        "severity": "High"
                     })
                 else:
                     # Validate the found caption
                     cap_match = figure_caption_pattern.match(caption_text)
                     full_id = cap_match.group(1).strip('.')
-                    sep = cap_match.group(2)
                     figure_title = cap_match.group(3).strip()
                     
                     # 1. ID Check
-                    if full_id != '8.2.1' and not full_id.startswith('8.2.'):
+                    if full_id != expected_fig_id and not full_id.startswith(f"{derived_prefix}."):
                         errors.append({
                             "where": f"{actual_title} - Figure ID Check",
                             "what": f"Incorrect Figure ID: Found '{full_id}'.",
-                            "suggestion": "Expected: '8.2.1'",
-                            "redirect_text": redirect_title,
-                            "severity": "medium"
+                            "suggestion": f"Expected: '{expected_fig_id}'",
+                            "redirect_text": redirect_val,
+                            "severity": "Medium"
                         })
                     
-                    # 2. Name Check - Must be "Test Bed Diagram" only
+                    # 2. Name Check - Must be "Test Bed Diagram" (case insensitive, allow flexible spacing)
                     norm_title = " ".join(figure_title.lower().split())
                     if norm_title != "test bed diagram":
                         errors.append({
                             "where": f"{actual_title} - Figure Name Check",
                             "what": f"Incorrect Figure Name: Found '{figure_title}'.",
                             "suggestion": "Expected: 'Test Bed Diagram'",
-                            "redirect_text": redirect_title,
-                            "severity": "medium"
+                            "redirect_text": redirect_val,
+                            "severity": "Medium"
                         })
 
         return errors
@@ -135,9 +173,8 @@ if __name__ == "__main__":
     result = check_section_8_2(json_path)
     
     # Sort by severity
-    severity_priority = {"high": 0, "medium": 1, "low": 2}
-    if isinstance(result, list):
-        result.sort(key=lambda x: severity_priority.get(x.get('severity', 'medium'), 1))
+    severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+    result.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
         
     # Save to output.json (silent)
     try:

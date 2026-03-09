@@ -66,60 +66,94 @@ def main():
 
         # Find Section 9
         target_section = None
+        found_title = ""
         for sec in sections:
             title = sec.get('title', '').strip()
-            sec_id = sec.get('section_id', '')
-            if sec_id == 'SEC-13' or re.search(r'9\.\s+Expected\s+Result', title, re.IGNORECASE):
+            title_lower = title.lower()
+            if 'expected' in title_lower and 'result' in title_lower:
                 target_section = sec
+                found_title = title
                 break
 
         if not target_section:
             all_errors.append({
-                "pos": 0,
                 "where": expected9_title, 
                 "what": "Section 9 missing", 
-                "suggestion": f"Add {expected9_title}", 
-                "severity": "high"
+                "suggestion": f"Expected: '{expected9_title}'", 
+                "redirect_text": redirect_title,
+                "severity": "High"
             })
-        else:
-            actual_title = target_section.get('title', '').strip()
-            if actual_title.replace(':', '').strip().lower() != expected9_title.replace(':', '').strip().lower():
+            print(json.dumps(all_errors, indent=4))
+            sys.exit(0)
+
+        # TITLE VALIDATION
+        title_lower = found_title.lower()
+        has_body = 'expected' in title_lower and 'result' in title_lower
+        
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("9.")
+
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
                 all_errors.append({
-                    'pos': 0,
-                    'where': expected9_title,
-                    'what': f"Incorrect title: Found '{actual_title}'",
-                    'suggestion': f"Change title to exactly '{expected9_title}'",
-                    'redirect_text': redirect_title,
-                    'severity': 'medium'
+                    "where": expected9_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '9.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '9.'. Expected: '{expected9_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
                 })
+            elif has_body and not has_any_number:
+                # Title body is correct but section number "9." is missing entirely
+                all_errors.append({
+                    "where": expected9_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{expected9_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return print(json.dumps([{
+                    "where": expected9_title,
+                    "what": "Section 9 missing",
+                    "suggestion": f"Expected: '{expected9_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }], indent=4))
+            # proceed to content check if we have the body
 
-            actual_redirect = re.sub(r'^\d+\.\d?\.\s*', '', actual_title).strip().replace(':', '') or redirect_title
+        actual_title = found_title
+        # Clean redirect: Remove leading numbers and trailing colons
+        actual_redirect = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or redirect_title
 
-            # Normalize data sources
-            er_items = target_section.get('expected_results', [])
-            content_items = target_section.get('content', [])
+        # Normalize data sources
+        er_items = target_section.get('expected_results', [])
+        content_items = target_section.get('content', [])
 
-            parsed_scenarios = []
-            if er_items:
-                # STRUCTURED MODE: List of dicts with test_case_id and expected_result
-                for x in er_items:
-                    if isinstance(x, dict):
-                        # Use Master Logic to handle strings or lists
-                        h_val = x.get('test_case_id', '')
-                        if isinstance(h_val, list):
-                            h = " ".join([str(i) for i in h_val if i]).strip()
-                        else:
-                            h = str(h_val).strip()
-                            
-                        d_val = x.get('expected_result', '')
-                        if isinstance(d_val, list):
-                            d = " ".join([str(i) for i in d_val if i]).strip()
-                        else:
-                            d = str(d_val).strip()
-                            
-                        parsed_scenarios.append({'header': h, 'desc': d})
+        parsed_scenarios = []
+        if er_items:
+            # STRUCTURED MODE: List of dicts with test_case_id and expected_result
+            for x in er_items:
+                if isinstance(x, dict):
+                    # Use Master Logic to handle strings or lists
+                    h_val = x.get('test_case_id', '')
+                    if isinstance(h_val, list):
+                        h = " ".join([str(i) for i in h_val if i]).strip()
                     else:
-                        parsed_scenarios.append({'header': str(x).strip(), 'desc': ''})
+                        h = str(h_val).strip()
+                        
+                    d_val = x.get('expected_result', '')
+                    if isinstance(d_val, list):
+                        d = " ".join([str(i) for i in d_val if i]).strip()
+                    else:
+                        d = str(d_val).strip()
+                        
+                    parsed_scenarios.append({'header': h, 'desc': d})
+                else:
+                    parsed_scenarios.append({'header': str(x).strip(), 'desc': ''})
             else:
                 # UNSTRUCTURED MODE: Split content by ID pattern
                 raw_text_blocks = []
@@ -214,7 +248,7 @@ def main():
                         "what": f"ID alignment is incorrect. Found '{found_id}'.", 
                         "suggestion": f"Correct alignment to .{expected_seq} (Full ID: {base_id or found_base}.{expected_seq})", 
                         "redirect_text": actual_redirect, 
-                        "severity": "low"
+                        "severity": "Low"
                     })
                 
                 # Check 3: Content Missing
@@ -233,8 +267,8 @@ def main():
                     })
 
         # Sort errors scenario-wise (by position) then by severity
-        severity_map = {"high": 0, "medium": 1, "low": 2}
-        all_errors.sort(key=lambda x: (x.get("pos", 0), severity_map.get(x.get("severity", "low"), 2)))
+        severity_map = {"High": 0, "Medium": 1, "Low": 2}
+        all_errors.sort(key=lambda x: (x.get("pos", 0), severity_map.get(x.get("severity", "Low"), 2)))
         
         # Remove the pos key before outputting to keep it clean if desired, 
         # or keep it if it's useful. I'll remove it for the final output.

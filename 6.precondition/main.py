@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 
 def is_valid_content(t):
@@ -27,51 +28,79 @@ def check_section_6(file_path):
         
         sections = data.get('sections', [])
         target_section = None
+        standard_title = "6. Preconditions"
         stable_redirect = "Preconditions"
-        standard_title = "6. Preconditions:"
         
-        # 1. IDENTIFICATION (Fuzzy & Number-based)
+        # 1. IDENTIFICATION (by static title body)
         for section in sections:
             title = section.get('title', '').strip()
             title_lower = title.lower()
             
-            # Starts with "6. " or contains keyword "Precondition"
-            if title.startswith('6. ') or ('precondition' in title_lower):
-                target_section = section
-                break
-            # Fallback to ID
-            if section.get('section_id') == 'SEC-06':
+            # Identify by exact static title body
+            if 'precondition' in title_lower:
                 target_section = section
                 break
 
         if not target_section:
             return [{
-                "where": "6. Preconditions",
+                "where": standard_title,
                 "what": "Section 6 missing",
                 "suggestion": f"Expected: '{standard_title}'",
                 "redirect_text": stable_redirect,
                 "severity": "High"
             }]
         
-        # STRICT TITLE VALIDATION (BLOCKING)
+        # IDENTIFICATION SUCCESSFUL
         found_title = target_section.get('title', '').strip()
-        # It MUST start with "6." and contain "Precondition" (case-insensitive)
         title_lower = found_title.lower()
-        if not (found_title.startswith("6.") and "precondition" in title_lower):
-             return [{
-                "where": found_title if found_title else "Section 6",
-                "what": "Section 6 missing",
-                "suggestion": f"Expected: '{standard_title}'",
-                "redirect_text": stable_redirect,
-                "severity": "High"
-            }]
+
+        # Detect the title body
+        has_body = "precondition" in title_lower
+
+        # Identify any leading number prefix (handles 6., 6.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("6.")
+
+        errors = []
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '6.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '6.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_body and not has_any_number:
+                # Title body is correct but section number "6." is missing entirely
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": standard_title,
+                    "what": "Section 6 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
 
         actual_title = found_title
-        errors = []
-        
-        import re
-        # Clean redirect: Remove leading numbers/dots and trailing colons
+        # Clean redirect: Remove leading numbers and trailing colons
         redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
+
+        # Check content
+        has_valid_content = False
+        found_text_sample = ""
 
         # 3. CONTENT VALIDATION
         has_valid_content = False
@@ -113,6 +142,10 @@ def check_section_6(file_path):
                 "redirect_text": redirect_val,
                 "severity": "High"
             })
+            
+        # Sort by severity
+        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        errors.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
             
         return errors
 

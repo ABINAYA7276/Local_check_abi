@@ -57,16 +57,50 @@ def check_section_10(file_path):
                 "severity": "high"
             }]
         
-        # 1. Check Title Correctness
-        actual_title = target_section.get('title', '').strip()
-        if actual_title.lower().replace(':', '') != expected_title.lower().replace(':', ''):
-            findings.append({
-                "where": expected_title,
-                "what": f"Incorrect section title. Found: '{actual_title}'",
-                "suggestion": f"Use exact title: '{expected_title}'",
-                "redirect_text": actual_title,
-                "severity": "medium"
-            })
+        # IDENTIFICATION SUCCESSFUL
+        found_title = target_section.get('title', '').strip()
+        title_lower = found_title.lower()
+
+        # Detect the title body
+        has_body = "expected" in title_lower and "format" in title_lower and "evidence" in title_lower
+
+        # Identify any leading number prefix (handles 10., 10.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("10.")
+
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                findings.append({
+                    "where": expected_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '10.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '10.'. Expected: '{expected_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_body and not has_any_number:
+                # Title body is correct but section number "10." is missing entirely
+                findings.append({
+                    "where": expected_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{expected_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": expected_title,
+                    "what": "Section 10 missing",
+                    "suggestion": f"Expected: '{expected_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
+
+        actual_title = found_title
         
         import re
         redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).strip() or actual_title
@@ -119,7 +153,7 @@ def check_section_10(file_path):
                 "what": f"content missing in {expected_title}. Found: '{found_val}'",
                 "suggestion": "Add Expected Format of Evidence description",
                 "redirect_text": redirect_title,
-                "severity": "high"
+                "severity": "High"
             })
         
         return findings
@@ -130,17 +164,17 @@ def check_section_10(file_path):
             "what": str(e),
             "suggestion": "Check JSON format",
             "redirect_text": "Error",
-            "severity": "high"
+            "severity": "High"
         }]
 
 if __name__ == "__main__":
     json_path = sys.argv[1] if len(sys.argv) > 1 else 'dutjson.json'
     result = check_section_10(json_path)
     
-    # Sort findings by severity: high > medium > low
-    severity_priority = {"high": 0, "medium": 1, "low": 2}
+    # Sort findings by severity: High > Medium > Low
+    severity_priority = {"High": 0, "Medium": 1, "Low": 2}
     if isinstance(result, list):
-        result.sort(key=lambda x: severity_priority.get(x.get('severity', 'medium'), 1))
+        result.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
     
     # Save to output.json (silent)
     try:

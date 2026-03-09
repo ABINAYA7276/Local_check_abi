@@ -259,13 +259,13 @@ def check_section_12(file_path):
                     
 
         if errors:
-            severity_order = {"high": 0, "medium": 1, "low": 2}
+            severity_order = {"High": 0, "Medium": 1, "Low": 2}
 
             def get_sort_key(error):
                 where = error.get('where', '')
                 # Handle Section title/missing errors first
                 if where == expected_title:
-                    return (-1, [], severity_order.get(error.get("severity", "low"), 2))
+                    return (-1, [], severity_order.get(error.get("severity", "Low"), 2))
 
                 # Extract scenario ID for natural sorting (e.g., 1.1.1.2 before 1.1.1.10)
                 # Match format: "12. Test Case Result: - 1.1.1.2"
@@ -274,16 +274,16 @@ def check_section_12(file_path):
                     id_str = match.group(1).replace(' ', '')
                     if any(c.isdigit() for c in id_str) and not any(c.isalpha() for c in id_str):
                         id_parts = [int(x) for x in id_str.split('.') if x.strip().isdigit()]
-                        return (0, id_parts, severity_order.get(error.get("severity", "low"), 2))
+                        return (0, id_parts, severity_order.get(error.get("severity", "Low"), 2))
 
                 # Fallback for column errors or other descriptions
-                return (1, [where], severity_order.get(error.get("severity", "low"), 2))
+                return (1, [where], severity_order.get(error.get("severity", "Low"), 2))
 
             errors.sort(key=get_sort_key)
         return errors if errors else None
 
     except Exception as e:
-        return [{"where": "Section 12", "what": f"Error: {e}", "severity": "high"}]
+        return [{"where": "Section 12", "what": f"Error: {e}", "severity": "High"}]
 
 if __name__ == "__main__":
     if hasattr(sys.stdout, 'reconfigure'):

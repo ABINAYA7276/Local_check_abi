@@ -1,6 +1,7 @@
 
 import json
 import os
+import re
 import sys
 
 def check_section_4(file_path):
@@ -19,46 +20,74 @@ def check_section_4(file_path):
         candidates = []
         stable_redirect = "DUT Interface Status details"
         
-        # 1. IDENTIFICATION (Fuzzy & Number-based)
+        standard_title = "4. DUT Confirmation Details"
+
+        # 1. IDENTIFICATION (by static title body)
         for section in sections:
             title = section.get('title', '').strip()
             title_lower = title.lower()
             
-            # Starts with "4. " or contains keywords
-            if title.startswith('4. ') or ('dut' in title_lower and 'confirmation' in title_lower):
-                 candidates.append(section)
-            elif section.get('section_id') == 'SEC-04':
+            # Relaxed Identification
+            if 'dut' in title_lower and 'confirmation' in title_lower:
                  candidates.append(section)
         
         if not candidates:
             return [{
-                "where": "4. DUT Confirmation Details",
+                "where": standard_title,
                 "what": "Section 4 missing",
-                "suggestion": f"Expected: '4. DUT Confirmation Details'",
-                "redirect_text": "DUT Confirmation Details",
+                "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": stable_redirect,
                 "severity": "High"
             }]
         
+        # IDENTIFICATION SUCCESSFUL
         primary_section = candidates[0]
-        # STRICT TITLE VALIDATION (BLOCKING)
         found_title = primary_section.get('title', '').strip()
-        # It MUST start with "4." and contain "DUT Confirmation Details" (case-insensitive)
         title_lower = found_title.lower()
-        if not (found_title.startswith("4.") and "dut confirmation details" in title_lower):
-             return [{
-                "where": found_title if found_title else "Section 4",
-                "what": "Section 4 missing",
-                "suggestion": f"Expected: '4. DUT Confirmation Details'",
-                "redirect_text": "DUT Confirmation Details",
-                "severity": "High"
-            }]
 
-        actual_title = found_title
+        # Detect the title body
+        has_dut_body = "dut confirmation details" in title_lower
+
+        # Identify any leading number prefix (handles 4., 4.., etc.)
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("4.")
+
         errors = []
+        if not (has_correct_num and has_dut_body):
+            if has_dut_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '4.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '4.'. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_dut_body and not has_any_number:
+                # Title body is correct but section number "4." is missing entirely
+                errors.append({
+                    "where": standard_title,
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                return [{
+                    "where": standard_title,
+                    "what": "Section 4 missing",
+                    "suggestion": f"Expected: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }]
+            # proceed to content check if we have the body
         
-        import re
+        actual_title = found_title
         # Clean redirect: Remove leading numbers and trailing colons
-        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or "DUT Confirmation Details"
+        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
         
         # Helper to check meaningful text
         def is_valid_content(t):
@@ -220,6 +249,10 @@ def check_section_4(file_path):
                 "severity": "Medium"
             })
 
+        # Sort by severity
+        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        errors.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
+            
         return errors
 
     except Exception as e:

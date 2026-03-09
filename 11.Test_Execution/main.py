@@ -141,14 +141,14 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict
             if intended:
                 why = f"Incorrect header format: Found '{intended}'"
                 suggestion = f"Expected: '{label}:'"
-                sev = 'medium'
+                sev = 'Medium'
             else:
                 why = f"Missing section: '{label}' section not found"
                 if first_line:
                     display_line = first_line[:50] + "..." if len(first_line) > 50 else first_line
                     why += f". Found: '{display_line}'"
                 suggestion = f"Add '{label}' section"
-                sev = 'high'
+                sev = 'High'
             
             errors.append({
                 'why': why, 
@@ -163,7 +163,7 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict
                     'why': why, 
                     'suggestion': f"Expected: '{label}:'", 
                     'label': label,
-                    'severity': 'medium'
+                    'severity': 'Medium'
                 })
             
             # Check for space/format error (a, b, c, d, e)
@@ -172,7 +172,7 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict
                     'why': f"Incorrect header format: Found '{status['found_header'].split(':')[0].strip()}'",
                     'suggestion': f"Expected: '{label}:'",
                     'label': label,
-                    'severity': 'low'
+                    'severity': 'Low'
                 })
 
             if not status['has_content']:
@@ -181,7 +181,7 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict
                     'why': why, 
                     'suggestion': f"Add content after '{label}'", 
                     'label': label,
-                    'severity': 'high'
+                    'severity': 'High'
                 })
     return errors
 
@@ -231,7 +231,7 @@ def check_figure_ids(items: List, expected_tc_number: str, test_id: str) -> List
                     'type': 'figure_missing', 
                     'why': f"Caption missing: Found {context_where}", 
                     'suggestion': f"Expected: 'Figure {expected_tc_number}.X: description' immediately after the image", 
-                    'severity': 'medium'
+                    'severity': 'Medium'
                 })
 
     # Pass 2: Captions validation (sequence, format, alignment)
@@ -268,7 +268,7 @@ def check_figure_ids(items: List, expected_tc_number: str, test_id: str) -> List
                 'type': 'figure_id', 
                 'why': f"Incorrect Figure ID alignment: Found 'Figure {actual_id}'", 
                 'suggestion': f"Expected to start with '{expected_tc_number}' (e.g. Figure {correct_id})", 
-                'severity': 'low'
+                'severity': 'Low'
             })
         # 2. Sequence Check
         elif fig['suffix'] != expected_suffix:
@@ -276,7 +276,7 @@ def check_figure_ids(items: List, expected_tc_number: str, test_id: str) -> List
                 'type': 'figure_id', 
                 'why': f"Incorrect Figure ID sequence: Found '{fig['text']}'", 
                 'suggestion': f"Expected Figure {correct_id}", 
-                'severity': 'low'
+                'severity': 'Low'
             })
             
         # 3. Title Check
@@ -285,7 +285,7 @@ def check_figure_ids(items: List, expected_tc_number: str, test_id: str) -> List
                 'type': 'figure_title', 
                 'why': f"Figure title missing: Found '{fig['title']}' for Figure {actual_id}", 
                 'suggestion': f"Add a descriptive title for Figure {actual_id}", 
-                'severity': 'medium'
+                'severity': 'Medium'
             })
         expected_suffix += 1
 
@@ -334,7 +334,6 @@ def main():
         if not base_id:
             for section in sections:
                 title = section.get('title', '').strip()
-                sec_id = section.get('section_id', '')
                 
                 is_req_sec = "Security Requirement No & Name" in title or re.search(r'^2\.', title) or re.search(r'Security\s+Requirement', title, re.IGNORECASE)
                 # Check field
@@ -352,35 +351,82 @@ def main():
                         break
                 if base_id: break
 
-        in_section_11 = False
-        section11_found = False
-        section11_found_via_header = False
-        section11_title_error = None
-        found_test_ids = []
-        found_test_case_numbers = []
-        current_test_case_number = None
+        # IDENTIFICATION SUCCESSFUL
+        target_section = None
+        found_title = ""
+        for section in sections:
+            title = section.get('title', '').strip()
+            title_lower = title.lower()
+            # Relaxed identification: strictly require 'test' and 'execution'
+            if "test" in title_lower and "execution" in title_lower:
+                 target_section = section
+                 found_title = title
+                 # If it also contains '11', it's highly likely the correct one.
+                 if "11" in title_lower: break
+        
+        if not target_section:
+             print(json.dumps([{
+                "where": "11. Test Execution:",
+                "what": "Section 11 missing",
+                "suggestion": "Expected: '11. Test Execution:'",
+                "redirect_text": "Test Execution",
+                "severity": "High"
+            }], indent=4))
+             sys.exit(0)
 
+        # 1. TITLE VALIDATION
+        title_lower = found_title.lower()
+        has_body = "test" in title_lower and "execution" in title_lower
+        
+        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
+        has_any_number = num_prefix_match is not None
+        has_correct_num = found_title.startswith("11.")
+
+        if not (has_correct_num and has_body):
+            if has_body and has_any_number and not has_correct_num:
+                # Title body is correct but section number is wrong
+                wrong_num = num_prefix_match.group(1).strip()
+                all_errors_table.append({
+                    "sort_key": 5,
+                    "where": "11. Test Execution:",
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '11.'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '11.'. Expected: '11. Test Execution:'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            elif has_body and not has_any_number:
+                # Title body is correct but section number "11." is missing entirely
+                all_errors_table.append({
+                    "sort_key": 5,
+                    "where": "11. Test Execution:",
+                    "what": f"Section number is missing in the title. Found: '{found_title}'",
+                    "suggestion": "Add the section number prefix. Expected: '11. Test Execution:'",
+                    "redirect_text": found_title,
+                    "severity": "Medium"
+                })
+            else:
+                # Title is entirely wrong or absent
+                print(json.dumps([{
+                    "where": "11. Test Execution:",
+                    "what": "Section 11 missing",
+                    "suggestion": "Expected: '11. Test Execution:'",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                }], indent=4))
+                sys.exit(0)
+            # proceed to content check if we have the body
+            
+        in_section_11 = False
+        section11_found = True # Since we found it above
+        current_test_case_number = None
+        found_test_case_numbers = []
+        found_test_ids = []
 
         for section in sections:
             title = section.get('title', '').strip()
-            level = section.get('level', 0)
-            sec_id = section.get('section_id', 'Unknown')
-            
-            title_lower = title.lower()
-            is_sec_11_candidate = "11" in title_lower and "test" in title_lower and "execution" in title_lower
-            
-            if (is_sec_11_candidate and level == 1) or (is_sec_11_candidate and not in_section_11):
+            # Reuse the finding logic to start inside Section 11
+            if section == target_section:
                 in_section_11 = True
-                section11_found = True
-                section11_found_via_header = True
-                if not re.match(r'^11\.\s+Test\s+Execution:?$', title, re.IGNORECASE):
-                     section11_title_error = {
-                        'where': "Test Execution - 11. Test Execution:",
-                        'what': f"Incorrect Title: '{title}'",
-                        'suggestion': "Expected: '11. Test Execution:'",
-                        'redirect_text': title,
-                        'severity': 'medium'
-                     }
                 continue
             
             if in_section_11 and re.match(r'^(12|10|13)(\.|\s)', title):
@@ -402,7 +448,7 @@ def main():
                  match_num = re.match(r'^(11[\d\s\.]+)', title_text)
                  num = match_num.group(1).replace(' ', '').strip(':').strip('.') if match_num else title_text.split(' ', 1)[0].replace(' ', '').strip(':').strip('.')
                  is_correct = "Test Case Number:" in title_text
-                 found_test_case_numbers.append({'number': num, 'title': title_text, 'is_correct_format': is_correct, 'section_id': sec_id})
+                 found_test_case_numbers.append({'number': num, 'title': title_text, 'is_correct_format': is_correct})
                  current_test_case_number = num
                  section11_found = True
                  content_list = []
@@ -429,7 +475,7 @@ def main():
                       m = test_id_pattern.match(t)
                       m_relax = test_id_relaxed.match(t) if not m else None
                       if m:
-                          found_test_ids.append({'id': m.group(1), 'title': t, 'section_id': sec_id, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list, 'missing_space': False})
+                          found_test_ids.append({'id': m.group(1), 'title': t, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list, 'missing_space': False})
                       elif m_relax:
                           extracted_id = m_relax.group(1)
                           # Dynamically derive expected suffix from text after the ID (not hardcoded)
@@ -441,10 +487,10 @@ def main():
                               'what': f"Incorrect format: Missing space after ID in '{t}'",
                               'suggestion': f"Expected: '{extracted_id} {exp_suffix}'",
                               'redirect_text': num,
-                              'severity': 'low'
+                              'severity': 'Low'
                           })
                           all_valid = False
-                          found_test_ids.append({'id': extracted_id, 'title': t, 'section_id': sec_id, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list, 'missing_space': True})
+                          found_test_ids.append({'id': extracted_id, 'title': t, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list, 'missing_space': True})
                  continue
 
             if re.search(r'^\d+\.\d+\.\d+\.\d+', title):
@@ -458,21 +504,13 @@ def main():
                  if match or "itsar" in title_text.lower():
                     tid = match.group(1) if match else title_text.split(' ')[0]
                     if tid.startswith('12.') or tid.startswith('10.'): continue 
-                    found_test_ids.append({'id': tid, 'title': title_text, 'section_id': sec_id, 'section': section, 'test_case_number': current_test_case_number, 'is_embedded': False, 'content_list': None})
+                    found_test_ids.append({'id': tid, 'title': title_text, 'section': section, 'test_case_number': current_test_case_number, 'is_embedded': False, 'content_list': None})
                     section11_found = True
 
         if not section11_found:
-             all_errors_table.append({'sort_key': 0, 'where': "Test Execution", 'what': "Section 11 Missing", 'suggestion': "Add Section 11", 'redirect_text': "Section 11 Missing", 'severity': 'high'})
-             all_valid = False
+             all_errors_table.append({'sort_key': 0, 'where': "Test Execution", 'what': "Section 11 Missing", 'suggestion': "Add Section 11", 'redirect_text': "Section 11 Missing", 'severity': 'High'})
         else:
-            if section11_title_error:
-                section11_title_error['sort_key'] = 5
-                all_errors_table.append(section11_title_error)
-                all_valid = False
-            
-            if not section11_found_via_header:
-                all_errors_table.append({'sort_key': 10, 'where': "Test Execution - 11. Test Execution:", 'what': "Missing or Incorrect Section 11 Main Header", 'suggestion': "Expected: '11. Test Execution:'", 'redirect_text': "Section 11", 'severity': 'medium'})
-                all_valid = False
+            if all_errors_table: all_valid = False
             
             base_suffix = base_id.split('.')[-1] if base_id and '.' in base_id else "1"
             # Determine Subsection Prefix Pattern (11.i vs 11.x.i)
@@ -506,7 +544,7 @@ def main():
                             'what': f"Incorrect sequence/base: Found '{num}' instead of '{l3_exp}'", 
                             'suggestion': f"Expected: '{expected_title}'", 
                             'redirect_text': f"{tc['title']}", 
-                            'severity': 'low'
+                            'severity': 'Low'
                         })
                     # Case 2: Missing space (ID is immediately followed by something other than space, colon, or hyphen)
                     elif re.match(r'^' + re.escape(l3_exp) + r'[^\s:\-–]', actual_title):
@@ -516,7 +554,7 @@ def main():
                             'what': f"Incorrect format: Missing space after ID in '{actual_title}'", 
                             'suggestion': f"Expected: '{expected_title}'", 
                             'redirect_text': f"{tc['title']}", 
-                            'severity': 'low'
+                            'severity': 'Low'
                         })
                     # Case 3: Other format issues (Text content mismatch)
                     else:
@@ -526,7 +564,7 @@ def main():
                             'what': f"Incorrect title format: Found '{actual_clean}'", 
                             'suggestion': f"Expected: '{expected_title}'", 
                             'redirect_text': f"{tc['title']}", 
-                            'severity': 'medium'
+                            'severity': 'Medium'
                         })
                     all_valid = False
                 elif actual_title != expected_title:
@@ -539,7 +577,7 @@ def main():
                             'what': f"Incorrect format: Missing space after ID in '{actual_title}'", 
                             'suggestion': f"Expected: '{expected_title}'", 
                             'redirect_text': f"{tc['title']}", 
-                            'severity': 'low'
+                            'severity': 'Low'
                         })
                         all_valid = False
             
@@ -585,7 +623,7 @@ def main():
                         'what': f"Base ID mismatch: Found '{tid}'. expected prefix '{base_id}'.", 
                         'suggestion': f"Ensure Base ID is {base_id}", 
                         'redirect_text': redirect_val, 
-                        'severity': 'low'
+                        'severity': 'Low'
                     })
                     all_valid = False
 
@@ -600,7 +638,7 @@ def main():
                         'what': f"Incorrect sequence: Found '{tid}' instead of '{exp_id}'",
                         'suggestion': f"Fix ID to {exp_id}",
                         'redirect_text': redirect_val,
-                        'severity': 'low'
+                        'severity': 'Low'
                     })
                     all_valid = False
                 
@@ -616,7 +654,7 @@ def main():
                         'what': f"Incorrect format: Missing space after ID in '{actual_test_title}'", 
                         'suggestion': f"Expected: '{tid} {expected_title_suffix}'", 
                         'redirect_text': redirect_val, 
-                        'severity': 'low'
+                        'severity': 'Low'
                     })
                     all_valid = False
 
@@ -629,7 +667,7 @@ def main():
                             'what': f"Incorrect Title suffix: Found '{rem}' instead of '{expected_title_suffix}'", 
                             'suggestion': f"Expected format: '{exp_id} {expected_title_suffix}'", 
                             'redirect_text': redirect_val, 
-                            'severity': 'medium'
+                            'severity': 'Medium'
                         })
                         all_valid = False
 
@@ -665,7 +703,7 @@ def main():
                         'what': "Content missing: Test case details are missing or empty", 
                         'suggestion': "Add test case details (Name, Description, Steps, etc.)", 
                         'redirect_text': redirect_val, 
-                        'severity': 'high'
+                        'severity': 'High'
                     })
                     all_valid = False
                 else:
@@ -680,7 +718,7 @@ def main():
                             'what': err['why'], 
                             'suggestion': err['suggestion'], 
                             'redirect_text': redirect_val, 
-                            'severity': err.get('severity', 'high')
+                            'severity': err.get('severity', 'High')
                         })
                         all_valid = False
                     
@@ -692,7 +730,7 @@ def main():
                             'what': err['why'], 
                             'suggestion': err['suggestion'], 
                             'redirect_text': redirect_val, 
-                            'severity': err.get('severity', 'low')
+                            'severity': err.get('severity', 'Low')
                         })
                         all_valid = False
 
@@ -701,8 +739,8 @@ def main():
         sys.exit(1)
 
     # Sort primarily by sort_key, then by severity
-    severity_map = {'high': 0, 'medium': 1, 'low': 2}
-    all_errors_table.sort(key=lambda x: (x.get('sort_key', 9999), severity_map.get(x.get('severity', 'low'), 3)))
+    severity_map = {'High': 0, 'Medium': 1, 'Low': 2}
+    all_errors_table.sort(key=lambda x: (x.get('sort_key', 9999), severity_map.get(x.get('severity', 'Low'), 3)))
     
     # Remove sort_key from the final output for cleaner JSON
     final_output = []
