@@ -375,45 +375,52 @@ def main():
              sys.exit(0)
 
         # 1. TITLE VALIDATION
+        expected_title_11 = "11. Test Execution"
         title_lower = found_title.lower()
-        has_body = "test" in title_lower and "execution" in title_lower
-        
-        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
-        has_any_number = num_prefix_match is not None
+        num_match = re.match(r'^([\d\.]+)', found_title)
+        has_any_number = num_match is not None
         has_correct_num = found_title.startswith("11.")
+        display_title_11 = expected_title_11
 
-        if not (has_correct_num and has_body):
-            if has_body and has_any_number and not has_correct_num:
+        # Determine redirect_title (without prefix) for UI redirection
+        redirect_title_11 = re.sub(r'^[\d\.]+\s*', '', found_title).strip() or found_title
+        
+        if not (has_correct_num and "test execution" in title_lower):
+            if has_any_number and not has_correct_num:
                 # Title body is correct but section number is wrong
-                wrong_num = num_prefix_match.group(1).strip()
+                wrong_num = num_match.group(1).strip()
                 all_errors_table.append({
                     "sort_key": 5,
-                    "where": "11. Test Execution:",
+                    "where": display_title_11,
                     "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '11.'",
-                    "suggestion": f"Replace section number '{wrong_num}' with '11.'. Expected: '11. Test Execution:'",
-                    "redirect_text": found_title,
+                    "suggestion": f"Replace section number '{wrong_num}' with '11.'. Expected: '{expected_title_11}'",
+                    "redirect_text": redirect_title_11,
                     "severity": "Low"
                 })
-            elif has_body and not has_any_number:
+            elif not has_any_number:
                 # Title body is correct but section number "11." is missing entirely
                 all_errors_table.append({
                     "sort_key": 5,
-                    "where": "11. Test Execution:",
+                    "where": display_title_11,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
-                    "suggestion": "Add the section number prefix. Expected: '11. Test Execution:'",
-                    "redirect_text": found_title,
+                    "suggestion": f"Add the section number prefix. Expected: '{expected_title_11}'",
+                    "redirect_text": redirect_title_11,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                print(json.dumps([{
-                    "where": "11. Test Execution:",
-                    "what": "Section 11 missing",
-                    "suggestion": "Expected: '11. Test Execution:'",
-                    "redirect_text": found_title,
-                    "severity": "High"
-                }], indent=4))
-                sys.exit(0)
+
+            # Formatting / Space Checks
+            if "test execution" not in title_lower:
+                is_space_issue = any(part in title_lower for part in ["testexecution", "11..", "test-execution"])
+                what_msg = f"Incorrect formatting (space issue) in the title. Found: '{found_title}'" if is_space_issue else f"Incorrect formatting in the title. Found: '{found_title}'"
+                
+                all_errors_table.append({
+                    "sort_key": 6,
+                    "where": display_title_11,
+                    "what": what_msg,
+                    "suggestion": f"Fix the title to exactly match: '{expected_title_11}'",
+                    "redirect_text": redirect_title_11,
+                    "severity": "Low"
+                })
             # proceed to content check if we have the body
             
         in_section_11 = False
@@ -421,6 +428,7 @@ def main():
         current_test_case_number = None
         found_test_case_numbers = []
         found_test_ids = []
+        sub_prefix_base = "11.1" # Default base
 
         for section in sections:
             title = section.get('title', '').strip()
@@ -475,22 +483,25 @@ def main():
                       m = test_id_pattern.match(t)
                       m_relax = test_id_relaxed.match(t) if not m else None
                       if m:
-                          found_test_ids.append({'id': m.group(1), 'title': t, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list, 'missing_space': False})
+                          found_test_ids.append({'id': m.group(1), 'title': t, 'section': section, 'test_case_number': num, 'tc_section_title': title_text, 'is_embedded': True, 'content_list': content_list, 'missing_space': False})
                       elif m_relax:
                           extracted_id = m_relax.group(1)
                           # Dynamically derive expected suffix from text after the ID (not hardcoded)
                           raw_after = t[len(extracted_id):].strip().lstrip(':- ')
                           exp_suffix = raw_after if raw_after else 'ITSAR WiFi-CPE'
+                          
+                          expected_sub_prefix_p1 = f"{sub_prefix_base}.{len(found_test_case_numbers)}"
+                          current_idx = len(found_test_case_numbers)
                           all_errors_table.append({
-                              'sort_key': int(num.split('.')[-1]) * 1000 + 49 if num and num.split('.')[-1].isdigit() else 9999,
-                              'where': f'11. Test Execution - Test Case Number {num} - Test Case {extracted_id}',
+                              'sort_key': current_idx * 1000 + 49,
+                              'where': f'11. Test Execution - Test Case Number {expected_sub_prefix_p1} - Test Case {extracted_id}',
                               'what': f"Incorrect format: Missing space after ID in '{t}'",
                               'suggestion': f"Expected: '{extracted_id} {exp_suffix}'",
-                              'redirect_text': num,
+                              'redirect_text': title_text,
                               'severity': 'Low'
                           })
                           all_valid = False
-                          found_test_ids.append({'id': extracted_id, 'title': t, 'section': section, 'test_case_number': num, 'is_embedded': True, 'content_list': content_list, 'missing_space': True})
+                          found_test_ids.append({'id': extracted_id, 'title': t, 'section': section, 'test_case_number': num, 'tc_section_title': title_text, 'is_embedded': True, 'content_list': content_list, 'missing_space': True})
                  continue
 
             if re.search(r'^\d+\.\d+\.\d+\.\d+', title):
@@ -504,7 +515,7 @@ def main():
                  if match or "itsar" in title_text.lower():
                     tid = match.group(1) if match else title_text.split(' ')[0]
                     if tid.startswith('12.') or tid.startswith('10.'): continue 
-                    found_test_ids.append({'id': tid, 'title': title_text, 'section': section, 'test_case_number': current_test_case_number, 'is_embedded': False, 'content_list': None})
+                    found_test_ids.append({'id': tid, 'title': title_text, 'section': section, 'test_case_number': current_test_case_number, 'tc_section_title': title_text, 'is_embedded': False, 'content_list': None})
                     section11_found = True
 
         if not section11_found:
@@ -513,13 +524,11 @@ def main():
             if all_errors_table: all_valid = False
             
             base_suffix = base_id.split('.')[-1] if base_id and '.' in base_id else "1"
-            # Determine Subsection Prefix Pattern (11.i vs 11.x.i)
-            sub_prefix_base = "11"
             if found_test_case_numbers:
                 first_tc = found_test_case_numbers[0]['number']
                 parts = first_tc.split('.')
                 if len(parts) >= 2 and parts[0] == "11":
-                    # Pattern is 11.x...i
+                    # If it's a valid 11.x format, use that base
                     sub_prefix_base = ".".join(parts[:-1])
 
             for i, tc in enumerate(found_test_case_numbers, 1):
@@ -529,84 +538,96 @@ def main():
                 sort_val = i * 1000  # Base sort key for this TC index
                 
                 # Check format "ID Test Case Number:"
-                expected_title = f"{l3_exp} Test Case Number:"
+                l3_exp_clean = l3_exp.strip('.')
+                expected_sub_title = f"{l3_exp_clean} Test Case Number:"
+                alt_expected = f"{l3_exp_clean}. Test Case Number:"
                 actual_title = tc['title'].strip()
+                actual_title_lower = actual_title.lower()
                 
                 # Consolidated Format Check
                 actual_clean = " ".join(actual_title.split()).strip()
                 
-                if actual_clean != expected_title:
-                    # Case 1: Sequence/ID error
+                if actual_clean not in [expected_sub_title, alt_expected]:
+                    # 1. Sequence/ID error
                     if num != l3_exp:
                         all_errors_table.append({
                             'sort_key': sort_val,
                             'where': where_sub, 
                             'what': f"Incorrect sequence/base: Found '{num}' instead of '{l3_exp}'", 
-                            'suggestion': f"Expected: '{expected_title}'", 
-                            'redirect_text': f"{tc['title']}", 
+                            'suggestion': f"Expected: '{expected_sub_title}'", 
+                            'redirect_text': re.sub(r'^[\d\.]+\s*', '', str(tc['title'])).strip(),
                             'severity': 'Low'
                         })
-                    # Case 2: Missing space (ID is immediately followed by something other than space, colon, or hyphen)
-                    elif re.match(r'^' + re.escape(l3_exp) + r'[^\s:\-–]', actual_title):
+                    
+                    # 2. Specific Space Check (e.g., '11.1.3Test' or '11.1.1TestCase')
+                    found_id_pattern = re.escape(num.strip('.'))
+                    is_crushed_id = re.match(r'^' + found_id_pattern + r'[^ \.\-\–\s]', actual_title)
+                    
+                    is_space_issue = (
+                        is_crushed_id or 
+                        "testcase" in actual_title_lower or 
+                        "casenumber" in actual_title_lower or
+                        "word-based" in actual_title_lower or
+                        ".." in actual_title
+                    )
+                    
+                    if is_space_issue:
                         all_errors_table.append({
-                            'sort_key': sort_val,
+                            'sort_key': sort_val + 1,
                             'where': where_sub, 
-                            'what': f"Incorrect format: Missing space after ID in '{actual_title}'", 
-                            'suggestion': f"Expected: '{expected_title}'", 
-                            'redirect_text': f"{tc['title']}", 
+                            'what': f"Incorrect formatting (space issue) in the title. Found: '{actual_title}'", 
+                            'suggestion': f"Expected: '{expected_sub_title}'", 
+                            'redirect_text': re.sub(r'^[\d\.]+\s*', '', str(tc['title'])).strip(),
                             'severity': 'Low'
                         })
-                    # Case 3: Other format issues (Text content mismatch)
-                    else:
+                    
+                    # 3. Fallback (Generic Format Error)
+                    # Only show if not already explained by sequence or spacing issues
+                    if actual_clean != expected_sub_title and not is_space_issue and num == l3_exp:
                         all_errors_table.append({
-                            'sort_key': sort_val,
+                            'sort_key': sort_val + 2,
                             'where': where_sub, 
                             'what': f"Incorrect title format: Found '{actual_clean}'", 
-                            'suggestion': f"Expected: '{expected_title}'", 
-                            'redirect_text': f"{tc['title']}", 
+                            'suggestion': f"Expected: '{expected_sub_title}'", 
+                            'redirect_text': re.sub(r'^[\d\.]+\s*', '', str(tc['title'])).strip(),
                             'severity': 'Medium'
                         })
                     all_valid = False
-                elif actual_title != expected_title:
+                elif actual_title not in [expected_sub_title, alt_expected]:
                     # Cleaned matches but original has spacing issues
-                    # Check specifically for NO space/separator after ID
-                    if re.match(r'^' + re.escape(l3_exp) + r'[^\s:\-–]', actual_title):
-                        all_errors_table.append({
-                            'sort_key': sort_val,
-                            'where': where_sub, 
-                            'what': f"Incorrect format: Missing space after ID in '{actual_title}'", 
-                            'suggestion': f"Expected: '{expected_title}'", 
-                            'redirect_text': f"{tc['title']}", 
-                            'severity': 'Low'
-                        })
-                        all_valid = False
+                    all_errors_table.append({
+                        'sort_key': sort_val + 3,
+                        'where': where_sub, 
+                        'what': f"Incorrect formatting (space issue) in the title. Found: '{actual_title}'", 
+                        'suggestion': f"Expected: '{expected_sub_title}'", 
+                        'redirect_text': f"{tc['title']}", 
+                        'severity': 'Low'
+                    })
+                    all_valid = False
             
-            # Create a lookup for expected subsection IDs
-            tc_expected_map = {tc['number']: f"{sub_prefix_base}.{idx}" for idx, tc in enumerate(found_test_case_numbers, 1)}
+            # Create a lookup for expected subsection IDs using the actual found index to ensure figures are validated against the CORRECT sequence
+            tc_expected_map = {}
+            for idx, tc in enumerate(found_test_case_numbers, 1):
+                # We map the found number to what it SHOULD be
+                tc_expected_map[tc['number']] = f"{sub_prefix_base}.{idx}"
+            
             tc_title_map = {tc['number']: tc['title'] for tc in found_test_case_numbers}
+            
             for i, test in enumerate(found_test_ids, 1):
                 tid = test['id']
                 tc_num = test.get('test_case_number')
-                # Derive expected ID from test ID's own suffix to avoid
-                # false positives caused by formatting issues (e.g. missing
-                # spaces) in earlier test cases that may shift the counter.
-                if base_id and tid:
-                    tid_parts = tid.split('.')
-                    if len(tid_parts) >= 4 and ".".join(tid_parts[:3]) == base_id:
-                        # Use the actual suffix from the found ID to compute expected
-                        exp_id = tid  # Correct if base matches
-                    else:
-                        exp_id = f"{base_id}.{i}" if base_id else tid
-                else:
-                    exp_id = f"{base_id}.{i}" if base_id else tid
                 
-                # Find the CORRECT expected subsection suffix
-                expected_sub_prefix = tc_expected_map.get(tc_num, tc_num)
+                # FORCE expected_sub_prefix to be based STRICTLY on its position in the document
+                # This ensures if the title says 11.1.3 but is at position 1 (i=1), we use 11.1.1 for figures
+                expected_sub_prefix = f"{sub_prefix_base}.{i}"
                 
-                # New descriptive 'where' field using the EXPECTED number for location clarity
+                # Derive expected ID based on its actual position in the document
+                exp_id = f"{base_id}.{i}" if base_id else tid
+                
+                # Use expected_sub_prefix for the 'where' field to show the CORRECT intended location
                 where_val = f"11. Test Execution - Test Case Number {expected_sub_prefix} - Test Case {exp_id}"
-                redirect_val = tc_title_map.get(tc_num, tid)
-                sort_val = i * 1000 + 50 # Ensure it comes after the header check for the same index
+                redirect_val = test.get('tc_section_title', tid)
+                sort_val = i * 1000 + 50 
 
                 # 1. Base ID Check
                 is_base_mismatch = False
@@ -646,8 +667,8 @@ def main():
                 expected_title_suffix = "ITSAR WiFi-CPE"
                 actual_test_title = test['title'].strip()
                 
-                # Check for space after ID: skip if already flagged by relaxed match (avoid duplicate)
-                if not test.get('missing_space', False) and tid in actual_test_title and not re.match(r'^' + re.escape(tid) + r'[:\-–\s]', actual_test_title):
+                # Check for space after ID: skip if already flagged by relaxed match
+                if not test.get('missing_space', False) and tid in actual_test_title and not re.match(r'^' + re.escape(tid) + r'[:\-–\.\s]', actual_test_title):
                     all_errors_table.append({
                         'sort_key': sort_val + 1.5,
                         'where': where_val, 

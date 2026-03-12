@@ -55,45 +55,60 @@ def check_section_8(file_path):
         found_title = target_section.get('title', '').strip()
         title_lower = found_title.lower()
 
-        # Detect the title body
-        has_body = "test" in title_lower and "plan" in title_lower
+        # Detect the title body (Strict validation)
+        has_correct_body = "test plan" in title_lower
 
         # Identify any leading number prefix (handles 8., 8.., etc.)
         num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
         has_any_number = num_prefix_match is not None
         has_correct_num = found_title.startswith("8.")
 
-        if not (has_correct_num and has_body):
-            if has_body and has_any_number and not has_correct_num:
-                # Title body is correct but section number is wrong
+        all_errors_table = []
+        
+        # 1. Number Checks
+        expected_num = standard_title.split('.')[0] + "."
+        if not has_correct_num:
+            if has_any_number:
                 wrong_num = num_prefix_match.group(1).strip()
                 all_errors_table.append({
                     "where": standard_title,
-                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '8.'",
-                    "suggestion": f"Replace section number '{wrong_num}' with '8.'. Expected: '{standard_title}'",
+                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '{expected_num}'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '{expected_num}'. Expected: '{standard_title}'",
                     "redirect_text": found_title,
                     "severity": "Low"
                 })
-            elif has_body and not has_any_number:
-                # Title body is correct but section number "8." is missing entirely
+            else:
                 all_errors_table.append({
                     "where": standard_title,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
-                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
+                    "suggestion": f"Add the section number prefix '{expected_num}'. Expected: '{standard_title}'",
                     "redirect_text": found_title,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                return [{
-                    "where": standard_title,
-                    "what": "Section 8 missing",
-                    "suggestion": f"Expected: '{standard_title}'",
-                    "redirect_text": found_title,
-                    "severity": "High"
-                }]
-            # proceed to content check if we have the body
 
+        # 2. Body / Formatting Checks (Spacing)
+        has_plan_body = "test" in title_lower and "plan" in title_lower
+        if has_plan_body:
+            if not has_correct_body:
+                all_errors_table.append({
+                    "where": standard_title,
+                    "what": f"Incorrect formatting or missing space in the title. Found: '{found_title}'",
+                    "suggestion": f"Fix the title to exactly match: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+        else:
+            # Title is entirely wrong or absent
+            all_errors_table.append({
+                "where": standard_title,
+                "what": "Section 8 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": found_title,
+                "severity": "High"
+            })
+             
+        # proceed to content check if we have the body
+        
         actual_title = found_title
         # Clean redirect: Remove leading numbers and trailing colons
         redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
@@ -128,29 +143,19 @@ def check_section_8(file_path):
 
         if not has_meaningful:
            all_errors_table.append({
-               "where": actual_title, 
+               "where": standard_title, 
                "what": "Test Plan content is missing or non-descriptive", 
                "suggestion": "Add test plan introductory content", 
-               "redirect_text": redirect_val,
-               "severity": "high"
+               "redirect_text": found_title,
+               "severity": "High"
            })
         
-        # Final Processing: Sort findings by severity: high > medium > low
-        findings = []
-        if all_errors_table:
-            severity_priority = {"High": 0, "Medium": 1, "Low": 2}
-            all_errors_table.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
+        # Final Processing: Sort findings by severity: Title issues (Low/Medium) before Content issues (High)
+        severity_priority = {"Low": 0, "Medium": 1, "High": 2}
+        if isinstance(all_errors_table, list):
+            all_errors_table.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium').capitalize(), 1))
             
-            for error in all_errors_table:
-                findings.append({
-                    "where": error['where'],
-                    "what": error['what'],
-                    "suggestion": error['suggestion'],
-                    "redirect_text": error.get('redirect_text', ''),
-                    "severity": error.get('severity', 'Medium')
-                })
-
-        return findings if findings else None
+        return all_errors_table if all_errors_table else None
 
     except Exception as e:
         return [{"where": "Section 8 Processing", "what": f"Error: {e}", "suggestion": "Check file structure", "severity": "high"}]

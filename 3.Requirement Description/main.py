@@ -55,8 +55,8 @@ def check_section_3(file_path):
         found_title = target_section.get('title', '').strip()
         title_lower = found_title.lower()
 
-        # Detect the title body
-        has_req_body = "requirement" in title_lower and "description" in title_lower
+        # Detect the title body (Strict check for correct formatting)
+        has_correct_body = "requirement description" in title_lower
 
         # Identify any leading number prefix (handles 3., 3.., etc.)
         num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
@@ -64,9 +64,10 @@ def check_section_3(file_path):
         has_correct_num = found_title.startswith("3.")
 
         errors = []
-        if not (has_correct_num and has_req_body):
-            if has_req_body and has_any_number and not has_correct_num:
-                # Title body is correct but section number is wrong
+        
+        # 1. Number Checks
+        if not has_correct_num:
+            if has_any_number:
                 wrong_num = num_prefix_match.group(1).strip()
                 errors.append({
                     "where": standard_title,
@@ -75,8 +76,7 @@ def check_section_3(file_path):
                     "redirect_text": found_title,
                     "severity": "Low"
                 })
-            elif has_req_body and not has_any_number:
-                # Title body is correct but section number "3." is missing entirely
+            else:
                 errors.append({
                     "where": standard_title,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
@@ -84,16 +84,30 @@ def check_section_3(file_path):
                     "redirect_text": found_title,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                return [{
-                    "where": standard_title,
-                    "what": "Section 3 missing",
-                    "suggestion": f"Expected: '{standard_title}'",
-                    "redirect_text": found_title,
-                    "severity": "High"
-                }]
-            # proceed to content check if we have the body
+
+        # 2. Body / Formatting Checks (Spacing)
+        # Relaxed identification
+        has_req_body = "requirement" in title_lower and "description" in title_lower
+        
+        if has_req_body and not has_correct_body:
+            errors.append({
+                "where": standard_title,
+                "what": f"Missing space in the title. Found: '{found_title}'",
+                "suggestion": f"Add space between words. Expected: '{standard_title}'",
+                "redirect_text": found_title,
+                "severity": "Medium"
+            })
+        elif not has_req_body:
+             # Title is entirely wrong or absent
+             return [{
+                 "where": standard_title,
+                 "what": "Section 3 missing",
+                 "suggestion": f"Expected: '{standard_title}'",
+                 "redirect_text": found_title,
+                 "severity": "High"
+             }]
+             
+        # proceed to content check if we have the body
         
         actual_title = found_title
         # Clean redirect: Remove leading numbers and trailing colons
@@ -140,15 +154,15 @@ def check_section_3(file_path):
 
         if not has_valid_content:
             errors.append({
-                "where": actual_title,
+                "where": standard_title,
                 "what": f"content missing. Found: '{found_text_sample}'",
                 "suggestion": "Provide the requirement description details.",
-                "redirect_text": redirect_val,
+                "redirect_text": found_title,
                 "severity": "High"
             })
             
-        # Sort by severity
-        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        # Sort by severity: Title issues (Low/Medium) before Content issues (High)
+        severity_priority = {"Low": 0, "Medium": 1, "High": 2}
         errors.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
             
         return errors

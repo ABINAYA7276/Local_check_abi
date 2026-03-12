@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import re
 
 def check_section_10(file_path):
     """
@@ -29,23 +30,27 @@ def check_section_10(file_path):
         
         sections = data.get('sections', [])
         target_section = None
+        found_title = ""
         
+        # DEBUG
+        # print(f"DEBUG: Processing {len(sections)} sections")
+
         for section in sections:
             title = section.get('title', '').strip()
             title_lower = title.lower()
             
             # Robust Section Discovery Keywords
-            # We check if the keyword or its common abbreviation is in the title
-            discovery_keywords = [
-                ("10",), 
-                ("expected",), 
-                ("format",), 
-                ("of",), 
-                ("evidence", "evid")
-            ]
+            has_10 = "10" in title_lower
+            has_expected = "expected" in title_lower
+            has_format = "format" in title_lower
+            has_evidence = any(kw in title_lower for kw in ["evidence", "evid"])
             
-            if all(any(variant in title_lower for variant in kw_tuple) for kw_tuple in discovery_keywords):
+            # Discovery logic:
+            # Must have at least two of (expected, format, evidence) AND either have "10" OR have all three.
+            match_count = sum([has_expected, has_format, has_evidence])
+            if (match_count >= 3) or (has_10 and match_count >= 2):
                 target_section = section
+                found_title = title
                 break
         
         if not target_section:
@@ -57,53 +62,55 @@ def check_section_10(file_path):
                 "severity": "high"
             }]
         
-        # IDENTIFICATION SUCCESSFUL
-        found_title = target_section.get('title', '').strip()
+        # Determine redirect_title (without prefix) for UI redirection
+        redirect_title = re.sub(r'^[\d\.]+\s*', '', found_title).strip() or found_title
+        
+        # TITLE VALIDATION
         title_lower = found_title.lower()
-
-        # Detect the title body
-        has_body = "expected" in title_lower and "format" in title_lower and "evidence" in title_lower
-
-        # Identify any leading number prefix (handles 10., 10.., etc.)
-        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
-        has_any_number = num_prefix_match is not None
+        # Robust prefix match: handles 10., 10.., etc.
+        num_match = re.match(r'^([\d\.]+)', found_title)
+        has_any_number = num_match is not None
         has_correct_num = found_title.startswith("10.")
+        
+        actual_prefix = num_match.group(1).strip() if num_match else "10"
+        display_title = expected_title
 
-        if not (has_correct_num and has_body):
-            if has_body and has_any_number and not has_correct_num:
+        if not (has_correct_num and "expected format of evidence" in title_lower):
+            if has_any_number and not has_correct_num:
                 # Title body is correct but section number is wrong
-                wrong_num = num_prefix_match.group(1).strip()
+                wrong_num = actual_prefix
                 findings.append({
-                    "where": expected_title,
+                    "where": display_title,
                     "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '10.'",
                     "suggestion": f"Replace section number '{wrong_num}' with '10.'. Expected: '{expected_title}'",
-                    "redirect_text": found_title,
+                    "redirect_text": redirect_title,
                     "severity": "Low"
                 })
-            elif has_body and not has_any_number:
+            elif not has_any_number:
                 # Title body is correct but section number "10." is missing entirely
                 findings.append({
-                    "where": expected_title,
+                    "where": display_title,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
                     "suggestion": f"Add the section number prefix. Expected: '{expected_title}'",
-                    "redirect_text": found_title,
+                    "redirect_text": redirect_title,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                return [{
-                    "where": expected_title,
-                    "what": "Section 10 missing",
-                    "suggestion": f"Expected: '{expected_title}'",
-                    "redirect_text": found_title,
-                    "severity": "High"
-                }]
-            # proceed to content check if we have the body
 
-        actual_title = found_title
-        
-        import re
-        redirect_title = re.sub(r'^[\d\.]+\s*', '', actual_title).strip() or actual_title
+            # Formatting / Space Checks
+            if "expected format of evidence" not in title_lower:
+                is_space_issue = any(part in title_lower for part in ["formatof", "ofevidence", "expectedformat", "10.."])
+                what_msg = f"Incorrect formatting (space issue) in the title. Found: '{found_title}'" if is_space_issue else f"Incorrect formatting in the title. Found: '{found_title}'"
+                
+                findings.append({
+                    "where": display_title,
+                    "what": what_msg,
+                    "suggestion": f"Fix the title to exactly match: '{expected_title}'",
+                    "redirect_text": redirect_title,
+                    "severity": "Low"
+                })
+
+        # Determine redirect_title for content checks (without prefix) -- THIS LINE IS REMOVED
+        # redirect_title_for_content = re.sub(r'^[\d\.]+\s*', '', found_title).strip() or found_title -- THIS LINE IS REMOVED
         
         has_text = False
         if not has_text:
@@ -149,7 +156,7 @@ def check_section_10(file_path):
             # Capture the first thing we found to show in the error message
             found_val = found_text_sample if found_text_sample else "None"
             findings.append({
-                "where": expected_title,
+                "where": display_title,
                 "what": f"content missing in {expected_title}. Found: '{found_val}'",
                 "suggestion": "Add Expected Format of Evidence description",
                 "redirect_text": redirect_title,
@@ -170,11 +177,6 @@ def check_section_10(file_path):
 if __name__ == "__main__":
     json_path = sys.argv[1] if len(sys.argv) > 1 else 'dutjson.json'
     result = check_section_10(json_path)
-    
-    # Sort findings by severity: High > Medium > Low
-    severity_priority = {"High": 0, "Medium": 1, "Low": 2}
-    if isinstance(result, list):
-        result.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
     
     # Save to output.json (silent)
     try:

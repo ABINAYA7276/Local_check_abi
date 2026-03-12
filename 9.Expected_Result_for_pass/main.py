@@ -88,46 +88,50 @@ def main():
 
         # TITLE VALIDATION
         title_lower = found_title.lower()
-        has_body = 'expected' in title_lower and 'result' in title_lower
-        
-        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
-        has_any_number = num_prefix_match is not None
+        # Robust prefix match: handles 20., 9., 9.. etc.
+        num_match = re.match(r'^([\d\.]+)', found_title)
+        has_any_number = num_match is not None
         has_correct_num = found_title.startswith("9.")
+        
+        actual_prefix = num_match.group(1).strip() if num_match else "9"
+        display_title = f"{actual_prefix} {expected9_title.split(' ', 1)[1]}"
 
-        if not (has_correct_num and has_body):
-            if has_body and has_any_number and not has_correct_num:
+        if not (has_correct_num and "expected results for pass" in title_lower):
+            if has_any_number and not has_correct_num:
                 # Title body is correct but section number is wrong
-                wrong_num = num_prefix_match.group(1).strip()
+                wrong_num = actual_prefix
                 all_errors.append({
-                    "where": expected9_title,
+                    "where": display_title,
                     "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '9.'",
                     "suggestion": f"Replace section number '{wrong_num}' with '9.'. Expected: '{expected9_title}'",
                     "redirect_text": found_title,
                     "severity": "Low"
                 })
-            elif has_body and not has_any_number:
+            elif not has_any_number:
                 # Title body is correct but section number "9." is missing entirely
                 all_errors.append({
-                    "where": expected9_title,
+                    "where": display_title,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
                     "suggestion": f"Add the section number prefix. Expected: '{expected9_title}'",
                     "redirect_text": found_title,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                return print(json.dumps([{
-                    "where": expected9_title,
-                    "what": "Section 9 missing",
-                    "suggestion": f"Expected: '{expected9_title}'",
+
+            # Formatting / Space Checks
+            if "expected results for pass" not in title_lower:
+                is_space_issue = any(part in title_lower for part in ["resultsfor", "expectedresults", "9.."])
+                what_msg = f"Incorrect formatting (space issue) in the title. Found: '{found_title}'" if is_space_issue else f"Incorrect formatting in the title. Found: '{found_title}'"
+                
+                all_errors.append({
+                    "where": display_title,
+                    "what": what_msg,
+                    "suggestion": f"Fix the title to exactly match: '{expected9_title}'",
                     "redirect_text": found_title,
-                    "severity": "High"
-                }], indent=4))
+                    "severity": "Low"
+                })
             # proceed to content check if we have the body
 
-        actual_title = found_title
-        # Clean redirect: Remove leading numbers and trailing colons
-        actual_redirect = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or redirect_title
+        actual_redirect = found_title if found_title else redirect_title
 
         # Normalize data sources
         er_items = target_section.get('expected_results', [])
@@ -204,14 +208,10 @@ def main():
                 
                 exp_id = f"{base_id}.{position}" if base_id else f"X.X.X.{position}"
                 
-                # Check for ID in header or beginning of desc
-                combined = (header + " " + desc).strip()
-                id_match = test_id_pattern.search(combined)
-                
                 raw_id_text = id_match.group(1) if id_match else "Missing ID"
                 found_id = re.sub(r'[\s]+', '', raw_id_text) if id_match else "Missing"
                 
-                where_ref = f"{expected9_title} - Test Scenario {position}"
+                where_ref = f"{display_title} - Test Scenario {position}"
 
                 if not id_match:
                     all_errors.append({

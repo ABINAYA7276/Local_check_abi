@@ -45,8 +45,8 @@ def check_section_4(file_path):
         found_title = primary_section.get('title', '').strip()
         title_lower = found_title.lower()
 
-        # Detect the title body
-        has_dut_body = "dut confirmation details" in title_lower
+        # Detect the title body (Strict validation)
+        has_correct_body = "dut confirmation details" in title_lower
 
         # Identify any leading number prefix (handles 4., 4.., etc.)
         num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
@@ -54,9 +54,10 @@ def check_section_4(file_path):
         has_correct_num = found_title.startswith("4.")
 
         errors = []
-        if not (has_correct_num and has_dut_body):
-            if has_dut_body and has_any_number and not has_correct_num:
-                # Title body is correct but section number is wrong
+        
+        # 1. Number Checks
+        if not has_correct_num:
+            if has_any_number:
                 wrong_num = num_prefix_match.group(1).strip()
                 errors.append({
                     "where": standard_title,
@@ -65,8 +66,7 @@ def check_section_4(file_path):
                     "redirect_text": found_title,
                     "severity": "Low"
                 })
-            elif has_dut_body and not has_any_number:
-                # Title body is correct but section number "4." is missing entirely
+            else:
                 errors.append({
                     "where": standard_title,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
@@ -74,21 +74,33 @@ def check_section_4(file_path):
                     "redirect_text": found_title,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                return [{
+
+        # 2. Body / Formatting Checks (Spacing)
+        # Relaxed identification
+        has_dut_body = "dut" in title_lower and "confirmation" in title_lower
+        
+        if has_dut_body:
+            if not has_correct_body:
+                errors.append({
                     "where": standard_title,
-                    "what": "Section 4 missing",
-                    "suggestion": f"Expected: '{standard_title}'",
+                    "what": f"Incorrect formatting or missing space in the title. Found: '{found_title}'",
+                    "suggestion": f"Fix the title to exactly match: '{standard_title}'",
                     "redirect_text": found_title,
-                    "severity": "High"
-                }]
-            # proceed to content check if we have the body
+                    "severity": "Low"
+                })
+        else:
+            # Title is entirely wrong or absent
+            return [{
+                "where": standard_title,
+                "what": "Section 4 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": found_title,
+                "severity": "High"
+            }]
+             
+        # proceed to content check if we have the body
         
         actual_title = found_title
-        # Clean redirect: Remove leading numbers and trailing colons
-        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or stable_redirect
-        
         # Helper to check meaningful text
         def is_valid_content(t):
             if not t or not isinstance(t, str): return False
@@ -104,8 +116,6 @@ def check_section_4(file_path):
         if 'dut_details' in primary_section:
             details = primary_section['dut_details']
             if isinstance(details, list):
-                # If it's a list of strings, combine them. 
-                # If it's a list of dicts (normal behavior), we'll handle that in the loop below.
                 if details and isinstance(details[0], str):
                     content_sources.append(" ".join([str(i) for i in details if i]))
                 else:
@@ -143,10 +153,10 @@ def check_section_4(file_path):
         
         if not has_any_content:
              errors.append({
-                "where": actual_title,
+                "where": standard_title,
                 "what": f"content missing. Found: '{found_text_sample}'",
                 "suggestion": "Provide the DUT confirmation details.",
-                "redirect_text": redirect_val,
+                "redirect_text": found_title,
                 "severity": "High"
             })
             # Do NOT return here. Continue to check the table.
@@ -165,14 +175,13 @@ def check_section_4(file_path):
                 if isinstance(item, dict) and item.get('type') == 'table':
                     headers = item.get('headers', [])
                     
-                    # Improved Identification: Check for ANY relevant keyword match
-                    # This allows finding the table even if headers are incorrect/missing
+                    # Identification: Check for relevant keywords
                     header_str = " ".join([str(h).lower() for h in headers])
                     keywords = ['interface', 'port', 'type', 'name']
                     match_count = sum(1 for k in keywords if k in header_str)
                     
-                    # If at least ONE keyword matches, assume it's the target table
-                    if match_count >= 1:
+                    # Assume first table found is target, or use keyword match
+                    if not found_table or match_count >= 1:
                         found_table = True
                         
                         expected_headers = ["Interfaces", "No.of Ports", "Interface Type", "Interface Name"]
@@ -188,28 +197,28 @@ def check_section_4(file_path):
                                 if not h:
                                      # Empty header found -> "Missing table header"
                                      errors.append({
-                                        "where": actual_title,
+                                        "where": standard_title,
                                         "what": f"Missing table header at Column {idx+1}",
                                         "suggestion": f"Provide the correct header: '{exp}'",
-                                        "redirect_text": redirect_val,
+                                        "redirect_text": found_title,
                                         "severity": "Medium"
                                     })
                                 elif h_norm != exp_norm:
                                      # Wrong text found -> "Incorrect table header found"
                                     errors.append({
-                                        "where": actual_title,
+                                        "where": standard_title,
                                         "what": f"Incorrect table header found: '{h}'",
                                         "suggestion": f"Provide the correct header: '{exp}'",
-                                        "redirect_text": redirect_val,
+                                        "redirect_text": found_title,
                                         "severity": "Medium"
                                     })
                             else:
-                                # Header index out of range -> "Missing table header" (effectively missing column)
+                                # Header index out of range -> "Missing table header"
                                 errors.append({
-                                    "where": actual_title,
+                                    "where": standard_title,
                                     "what": f"Missing table header at Column {idx+1}",
                                     "suggestion": f"Provide the correct header: '{exp}'",
-                                    "redirect_text": redirect_val,
+                                    "redirect_text": found_title,
                                     "severity": "Medium"
                                 })
                         
@@ -217,10 +226,10 @@ def check_section_4(file_path):
                         rows = item.get('rows', [])
                         if not rows:
                              errors.append({
-                                "where": actual_title,
+                                "where": standard_title,
                                 "what": "Table content is empty",
                                 "suggestion": "Provide the DUT interface status details table content.",
-                                "redirect_text": redirect_val,
+                                "redirect_text": found_title,
                                 "severity": "Medium"
                             })
                         else:
@@ -231,26 +240,25 @@ def check_section_4(file_path):
                                     
                                     if not str(cell).strip():
                                         errors.append({
-                                            "where": actual_title,
+                                            "where": standard_title,
                                             "what": f"Missing value in Row {r_idx}, Column '{col_name}'",
                                             "suggestion": f"Provide the '{col_name}' details.",
-                                            "redirect_text": redirect_val,
+                                            "redirect_text": found_title,
                                             "severity": "Medium"
                                         })
                         break 
             if found_table: break
-
         if not found_table:
              errors.append({
-                "where": actual_title,
+                "where": standard_title,
                 "what": "DUT Interface Status details table is missing",
                 "suggestion": "Provide the DUT interface status details table.",
-                "redirect_text": redirect_val,
+                "redirect_text": found_title,
                 "severity": "Medium"
             })
 
-        # Sort by severity
-        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        # Sort by severity: Title issues (Low/Medium) before Content issues (High)
+        severity_priority = {"Low": 0, "Medium": 1, "High": 2}
         errors.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
             
         return errors

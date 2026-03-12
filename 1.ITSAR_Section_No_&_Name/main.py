@@ -29,8 +29,8 @@ def is_valid_sentence(text):
 
 def main():
     def output_result(data, exit_code=0):
-        # Sort by severity
-        severity_priority = {"High": 0, "Medium": 1, "Low": 2}
+        # Sort by severity: Title issues (Low/Medium) before Content issues (High)
+        severity_priority = {"Low": 0, "Medium": 1, "High": 2}
         if isinstance(data, list):
             data.sort(key=lambda x: severity_priority.get(x.get('severity', 'Medium'), 1))
         
@@ -95,17 +95,17 @@ def main():
         found_title = target_section.get('title', '').strip()
         title_lower = found_title.lower()
 
-        # Detect the title body
-        has_itsar_body = "itsar" in title_lower and "section no" in title_lower
+        # Detect the title body (Strict validation)
+        has_correct_body = "itsar section no & name" in title_lower
 
         # Identify any leading number prefix (handles 1., 1.., etc.)
         num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
         has_any_number = num_prefix_match is not None
         has_correct_num = found_title.startswith("1.")
 
-        if not (has_correct_num and has_itsar_body):
-            if has_itsar_body and has_any_number and not has_correct_num:
-                # Title body is correct but section number is wrong
+        # 1. Number Checks
+        if not has_correct_num:
+            if has_any_number:
                 wrong_num = num_prefix_match.group(1).strip()
                 all_errors.append({
                     "where": standard_title,
@@ -114,8 +114,7 @@ def main():
                     "redirect_text": found_title,
                     "severity": "Low"
                 })
-            elif has_itsar_body and not has_any_number:
-                # Title body is correct but section number "1." is missing entirely
+            else:
                 all_errors.append({
                     "where": standard_title,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
@@ -123,16 +122,30 @@ def main():
                     "redirect_text": found_title,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                return output_result([{
+
+        # 2. Body / Formatting Checks (Spacing)
+        # Relaxed identification
+        has_itsar_body = "itsar" in title_lower and "section" in title_lower and "name" in title_lower
+        
+        if has_itsar_body:
+            # Check for any missing spaces or general incorrect formatting
+            if not has_correct_body:
+                all_errors.append({
                     "where": standard_title,
-                    "what": "Section 1 missing",
-                    "suggestion": f"Expected: '{standard_title}'",
+                    "what": f"Incorrect formatting or missing space in the title. Found: '{found_title}'",
+                    "suggestion": f"Fix the title to exactly match: '{standard_title}'",
                     "redirect_text": found_title,
-                    "severity": "High"
-                }], 0)
-            # proceed to content check if we have the body
+                    "severity": "Low"
+                })
+        else:
+            # Title is entirely wrong or absent
+            return output_result([{
+                "where": standard_title,
+                "what": "Section 1 missing",
+                "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": found_title,
+                "severity": "High"
+            }], 0)
 
         # 2. CONTENT VALIDATION (Only reached if Title is valid)
         has_valid_content = False
@@ -178,10 +191,10 @@ def main():
         
         if not has_valid_content:
             all_errors.append({
-                "where": found_title,
+                "where": standard_title,
                 "what": f"content missing. Found: '{found_text_sample}'",
                 "suggestion": "Provide the ITSAR section number and name details.",
-                "redirect_text": stable_redirect,
+                "redirect_text": found_title,
                 "severity": "High"
             })
 
@@ -201,7 +214,7 @@ def main():
                     # Valid ITSAR section number must contain at least one dot (e.g., 1.1, 1.1.2)
                     if '.' not in sec_num:
                         all_errors.append({
-                            "where": found_title,
+                            "where": standard_title,
                             "what": (
                                 f"ITSAR section number '{sec_num}' is invalid. "
                                 f"A plain integer is not allowed; section number must include sub-sections "
@@ -211,20 +224,20 @@ def main():
                                 f"Replace plain section number '{sec_num}' with a valid dotted section number "
                                 f"(e.g., '1.1', '1.1.2')."
                             ),
-                            "redirect_text": stable_redirect,
+                            "redirect_text": found_title,
                             "severity": "Low"
                         })
                 else:
                     # No section number found at all in this detail entry
                     if detail_str:  # Only flag if there is actual text (not empty)
                         all_errors.append({
-                            "where": found_title,
+                            "where": standard_title,
                             "what": (
                                 f"ITSAR section number is missing in detail: '{detail_str}'. "
                                 f"Expected a dotted section number (e.g., '1.1', '1.1.2')."
                             ),
                             "suggestion": "Add the ITSAR section number in dotted format (e.g., 'Section 1.1: Name').",
-                            "redirect_text": stable_redirect,
+                            "redirect_text": found_title,
                             "severity": "Low"
                         })
 

@@ -47,7 +47,7 @@ def main():
             data = json.load(f)
         
         sections = data.get('sections', [])
-        test_id_pattern = re.compile(r'\b(\d+(?:\s*[\. ]\s*\d+){3})\b')
+        test_id_pattern = re.compile(r'(\d+[\d\.\s]*\d+)') # More inclusive pattern
 
         # 1. Get base ID
         base_id = None
@@ -61,7 +61,6 @@ def main():
         if not base_id:
             for section in sections:
                 title = section.get('title', '').strip()
-                # Robust identification: Look for "2. Security Requirement" or "3. Requirement Description"
                 if re.search(r'\b[23]\.', title) and "requirement" in title.lower():
                     fields = ['security_requirement', 'itsar_section_details', 'content']
                     for field in fields:
@@ -77,30 +76,14 @@ def main():
                         if base_id: break
                 if base_id: break
 
-        # 2. Get expected IDs from Section 8.1 (Source of Truth)
+        # 2. Section 8.1 sync removed (Checking individually)
         expected_scenario_ids = []
-        for section in sections:
-            title = section.get('title', '').strip()
-            # Look for 8.1 and keywords like "scenario" or "number"
-            if "8.1" in title and ("scenario" in title.lower() or "number" in title.lower()):
-                scenarios = section.get('test_scenarios', [])
-                if isinstance(scenarios, list):
-                    for s in scenarios:
-                        s_text = s.get('test_scenario', '') if isinstance(s, dict) else str(s)
-                        m = test_id_pattern.search(s_text)
-                        if m:
-                            expected_scenario_ids.append(re.sub(r'[\s]+', '', m.group(1)))
-                break
 
-        # 3. Check for Section 8.4
-        section84_found = False
-        section84_has_content = False
-        expected84_title = "8.4. Test Execution Steps"
-        redirect_title = "Test Execution Steps"
-        
-        # IDENTIFICATION SUCCESSFUL
-        found_title = ""
+        # 3. Identify Section 8.4 (Execution Steps)
+        standard_title = "8.4. Test Execution Steps"
+        redirect_label = "Test Execution Steps"
         target_section = None
+        found_title = ""
         for section in sections:
             title = section.get('title', '').strip()
             title_lower = title.lower()
@@ -111,72 +94,69 @@ def main():
         
         if not target_section:
              output_result([{
-                "where": expected84_title,
+                "where": standard_title,
                 "what": "Section 8.4 missing",
-                "suggestion": f"Expected: '{expected84_title}'",
-                "redirect_text": redirect_title,
+                "suggestion": f"Expected: '{standard_title}'",
+                "redirect_text": redirect_label,
                 "severity": "High"
             }], 0)
 
-        # 3. TITLE VALIDATION
-        title_lower = found_title.lower()
-        has_body = "execution" in title_lower and "step" in title_lower
-        
-        num_prefix_match = re.match(r'^(\d+[\.\s\d]*)\s*', found_title)
-        has_any_number = num_prefix_match is not None
+        # Dynamic Display Title based on document's actual numbering
+        # Robust prefix match: handles 8.., 8.7, etc. even if stuck to text
+        num_match = re.match(r'^([\d\.]+)', found_title)
+        has_any_number = num_match is not None
         has_correct_num = found_title.startswith("8.4.")
+        
+        actual_prefix = num_match.group(1).strip() if num_match else "8.4"
+        # Use found prefix for reporting location to reflect document state
+        display_title = f"{actual_prefix} {standard_title.split(' ', 1)[1]}"
 
-        if not (has_correct_num and has_body):
-            if has_body and has_any_number and not has_correct_num:
+        if not (has_correct_num and "test execution steps" in found_title.lower()):
+            if has_any_number and not has_correct_num:
                 # Title body is correct but section number is wrong
-                wrong_num = num_prefix_match.group(1).strip()
+                wrong_num = actual_prefix
                 all_errors_table.append({
-                    "where": expected84_title,
+                    "where": display_title,
                     "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '8.4.'",
-                    "suggestion": f"Replace section number '{wrong_num}' with '8.4.'. Expected: '{expected84_title}'",
+                    "suggestion": f"Replace section number '{wrong_num}' with '8.4.'. Expected: '{standard_title}'",
                     "redirect_text": found_title,
                     "severity": "Low"
                 })
-            elif has_body and not has_any_number:
+            elif not has_any_number:
                 # Title body is correct but section number "8.4." is missing entirely
                 all_errors_table.append({
-                    "where": expected84_title,
+                    "where": display_title,
                     "what": f"Section number is missing in the title. Found: '{found_title}'",
-                    "suggestion": f"Add the section number prefix. Expected: '{expected84_title}'",
+                    "suggestion": f"Add the section number prefix. Expected: '{standard_title}'",
                     "redirect_text": found_title,
                     "severity": "Medium"
                 })
-            else:
-                # Title is entirely wrong or absent
-                return output_result([{
-                    "where": expected84_title,
-                    "what": "Section 8.4 missing",
-                    "suggestion": f"Expected: '{expected84_title}'",
-                    "redirect_text": found_title,
-                    "severity": "High"
-                }], 0)
-            # Proceed with content check
-        section84_found = True
-        section = target_section
-        actual_title = found_title
-        # Clean redirect: Remove leading numbers and trailing colons
-        redirect_val = re.sub(r'^[\d\.]+\s*', '', actual_title).replace(':', '').strip() or redirect_title
+
+            # Formatting / Space Checks
+            if "test execution steps" not in found_title.lower():
+                # Detect specific space issues
+                is_space_issue = any(part in found_title.lower() for part in ["executionsteps", "testexecution", "8.."])
+                what_msg = f"Incorrect formatting (space issue) in the title. Found: '{found_title}'" if is_space_issue else f"Incorrect formatting in the title. Found: '{found_title}'"
                 
+                all_errors_table.append({
+                    "where": display_title,
+                    "what": what_msg,
+                    "suggestion": f"Fix the title to exactly match: '{standard_title}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+        # Process Content
         text_sources = []
-        if 'execution_steps' in section:
-            for item in section['execution_steps']:
+        if 'execution_steps' in target_section:
+            for item in target_section['execution_steps']:
                 if isinstance(item, dict):
-                    text_sources.append({
-                        'text': item.get('test_scenario', '').strip(),
-                        'steps': item.get('steps', [])
-                    })
+                    text_sources.append({'text': item.get('test_scenario', '').strip(), 'steps': item.get('steps', [])})
         
-        if 'content' in section:
-            for item in section['content']:
-                txt = ""
-                if isinstance(item, dict) and item.get('type') == 'paragraph': txt = item.get('text', '').strip()
-                elif isinstance(item, str): txt = item.strip()
-                if txt: text_sources.append({'text': txt, 'steps': []})
+        if 'content' in target_section:
+            for item in target_section['content']:
+                txt = item.get('text', '').strip() if isinstance(item, dict) else str(item).strip()
+                if "test scenario" in txt.lower():
+                    text_sources.append({'text': txt, 'steps': []})
 
         scenario_tracker = {}
         found_id_count = 0
@@ -185,140 +165,100 @@ def main():
             text = source['text']
             if not text: continue
             
-            matches = test_id_pattern.findall(text)
-            if not matches: continue
+            m = test_id_pattern.search(text)
+            if not m: continue
             
-            section84_has_content = True
-            # Check for missing space in 'Test Scenario'
-            if re.search(r'TestScenario', text, re.IGNORECASE):
-                all_errors_table.append({
-                    'where': f"{expected84_title} - Test Scenario {found_id_count + 1 if base_id else 'Content'}",
-                    'what': "Incorrect format: Found 'TestScenario' (missing space)",
-                    'suggestion': "Expected: 'Test Scenario'",
-                    'redirect_text': redirect_val,
-                    'severity': 'Low'
-                })
-
-            for raw_id in matches:
-                test_id = re.sub(r'[\s]+', '', raw_id)
-                id_pos = text.find(raw_id)
-                found_id_count += 1
-                
-                # Use Base ID + current position as the expectation
-                exp_id = f"{base_id}.{found_id_count}" if base_id else test_id
-                where_ref = f"{expected84_title} - Test Scenario {exp_id}"
-                
-                if found_id_count not in scenario_tracker:
-                    scenario_tracker[found_id_count] = {
-                        'has_any_content': False,
-                        'expected_id': exp_id,
-                        'test_id': test_id,
-                        'where': where_ref,
-                        'errors': []
-                    }
-                
-                suffix = text[id_pos + len(raw_id):].strip()
-                clean_suffix = re.sub(r'^[:\.\s]+', '', suffix)
-                if is_meaningful_content(clean_suffix):
-                    scenario_tracker[found_id_count]['has_any_content'] = True
-
-                steps = source.get('steps', [])
-                if steps:
-                    for step_item in steps:
-                        step_content = step_item.get('step', '').strip() if isinstance(step_item, dict) else str(step_item).strip()
-                        if is_meaningful_content(step_content):
-                            scenario_tracker[found_id_count]['has_any_content'] = True
-                            break
-                
-                if test_id != exp_id:
-                    is_base_mismatch = base_id and not test_id.startswith(base_id)
-                    if is_base_mismatch:
-                        scenario_tracker[found_id_count]['errors'].append({
-                            'where': where_ref,
-                            'what': f"Base ID mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
-                            'suggestion': f"Expected Base ID: {base_id}",
-                            'redirect_text': redirect_val,
-                            'severity': 'Low'
-                        })
-                    
-                    scenario_tracker[found_id_count]['errors'].append({
-                        'where': where_ref,
-                        'what': f"Alignment mismatch: Found '{test_id}'. in Test Scenario {exp_id}",
-                        'suggestion': f"Expected: {exp_id}",
-                        'redirect_text': redirect_val,
-                        'severity': 'Low'
-                    })
-
-        # Ensure all expected scenarios from Section 8.1 are checked even if not found
-        total_expected = max(len(expected_scenario_ids), found_id_count)
-        for i in range(1, total_expected + 1):
-            if i not in scenario_tracker:
-                eid = expected_scenario_ids[i-1] if i <= len(expected_scenario_ids) else (f"{base_id}.{i}" if base_id else f"Slot {i}")
-                where = f"{expected84_title} - Test Scenario {eid}"
-                all_errors_table.append({
-                    'where': where,
-                    'what': f"test scenario content missing. in Test Scenario {eid}",
-                    'suggestion': f"Add description or execution steps for Scenario {eid}",
-                    'redirect_text': redirect_val,
-                    'severity': 'High'
-                })
+            found_id_count += 1
+            found_id = re.sub(r'[\s]+', '', m.group(1))
+            
+            # Use truth list if available, else fallback to base_id sequence
+            if found_id_count <= len(expected_scenario_ids):
+                exp_id = expected_scenario_ids[found_id_count - 1]
             else:
-                data = scenario_tracker[i]
-                if not data['has_any_content']:
-                    all_errors_table.append({
-                        'where': data['where'],
-                        'what': f"test scenario content missing. in Test Scenario {data['expected_id']}",
-                        'suggestion': f"Add description or execution steps to provide content for Scenario {data['expected_id']}",
-                        'redirect_text': redirect_val,
-                        'severity': 'High'
-                    })
-                for err in data['errors']:
-                    all_errors_table.append(err)
-                
-                break
-
-        if not section84_found:
-             all_errors_table.append({'where': expected84_title, 'what': "Section 8.4 missing", 'suggestion': f"Add Section {expected84_title}", 'severity': 'High'})
-        elif not section84_has_content:
-            all_errors_table.append({'where': expected84_title, 'what': "test scenario content missing. in 8.4. Test Execution Steps", 'suggestion': "Add test scenarios.", 'redirect_text': redirect_title, 'severity': 'High'})
+                exp_id = f"{base_id}.{found_id_count}" if base_id else found_id
             
-    except Exception as e:
-        all_errors_table.append({'where': "Section 8.4 Processing", 'what': f"Error: {str(e)}", 'suggestion': "Check JSON format", 'severity': 'High'})
+            where_ref = f"{display_title} - Test Scenario {exp_id}"
+            
+            # Format Check (Space issue)
+            if "testscenario" in text.lower():
+                all_errors_table.append({
+                    "where": where_ref,
+                    "what": f"Incorrect format: Found '{text.split(':')[0]}' (missing space)",
+                    "suggestion": f"Expected: 'Test Scenario {exp_id}:'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
 
+            # ID Alignment Check
+            if found_id != exp_id:
+                # Detect if the mismatch is specifically in the base ID part
+                found_base = ".".join(found_id.split('.')[:-1]) if '.' in found_id else ""
+                error_what = "ID alignment mismatch"
+                if base_id and found_base and found_base != base_id:
+                    error_what = "ID alignment mismatch (Base ID mismatch)"
+                
+                all_errors_table.append({
+                    "where": where_ref,
+                    "what": f"{error_what}: Found '{found_id}', Expected '{exp_id}'",
+                    "suggestion": f"Update ID to maintain sequence: '{exp_id}'",
+                    "redirect_text": found_title,
+                    "severity": "Low"
+                })
+            
+            # Content Check
+            has_steps = any(is_meaningful_content(s.get('step', '') if isinstance(s, dict) else str(s)) for s in source['steps'])
+            if not has_steps:
+                all_errors_table.append({
+                    "where": where_ref,
+                    "what": f"test scenario content missing. in Test Scenario {exp_id}",
+                    "suggestion": f"Add execution steps for Scenario {exp_id}",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                })
+            
+            scenario_tracker[found_id_count] = True
+
+        # Check for missing scenarios from Section 8.1
+        for i, eid in enumerate(expected_scenario_ids, 1):
+            if i not in scenario_tracker:
+                all_errors_table.append({
+                    "where": f"{display_title} - Test Scenario {eid}",
+                    "what": f"test scenario content missing. in Test Scenario {eid}",
+                    "suggestion": f"Add Section {display_title} details for {eid}",
+                    "redirect_text": found_title,
+                    "severity": "High"
+                })
+
+        if not scenario_tracker and not expected_scenario_ids:
+             all_errors_table.append({
+                "where": display_title,
+                "what": "test scenario content missing.",
+                "suggestion": "Add test scenarios and execution steps.",
+                "redirect_text": found_title,
+                "severity": "High"
+            })
+
+    except Exception as e:
+        all_errors_table.append({
+            "where": "Section 8.4 Processing",
+            "what": f"Error: {str(e)}",
+            "suggestion": "Check JSON structure",
+            "severity": "High"
+        })
+
+    # SORTING
     severity_order = {"High": 0, "Medium": 1, "Low": 2}
-    
     def get_sort_key(error):
         where = error.get('where', '')
-        # Handle Section 8.4 title/missing errors first
-        if where == expected84_title:
-            return (-1, [], severity_order.get(error.get("severity", "Low"), 2))
-            
-        # Extract scenario ID for natural sorting (e.g., 1.1.1.2 before 1.1.1.10)
-        match = re.search(r'Test Scenario ([\d\s\.]+)', where)
+        if where == display_title: return (-1, [], severity_order.get(error.get("severity", "Low"), 2))
+        match = re.search(r'Test Scenario ([\d\.]+)', where)
         if match:
-            id_str = match.group(1).replace(' ', '')
-            id_parts = [int(x) for x in id_str.split('.') if x.strip().isdigit()]
+            id_parts = [int(p) for p in match.group(1).split('.') if p.isdigit()]
             return (0, id_parts, severity_order.get(error.get("severity", "Low"), 2))
-            
-        # Fallback for any other errors
         return (1, [where], severity_order.get(error.get("severity", "Low"), 2))
 
     all_errors_table.sort(key=get_sort_key)
-
-    findings = []
-    for error in all_errors_table:
-        findings.append({
-            "where": error['where'],
-            "what": error['what'],
-            "suggestion": error['suggestion'],
-            "redirect_text": error.get('redirect_text', ''),
-            "severity": error.get('severity', 'Low')
-        })
-
-    print(json.dumps(findings, indent=4))
-    with open('output.json', 'w', encoding='utf-8') as f:
-        json.dump(findings, f, indent=4)
-    sys.exit(1 if findings else 0)
+    output_result(all_errors_table)
 
 if __name__ == "__main__":
     main()

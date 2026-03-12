@@ -40,31 +40,27 @@ def check_section_12(file_path):
 
             # Optional: Check Section 1, 2 or 3 for base_id
             if not base_id:
-                if sec_id in ['SEC-01', 'SEC-02', 'SEC-03'] or re.search(r'\b[123]\.', title):
-                    # Check direct fields
+                if sec_id in ['SEC-01', 'SEC-02', 'SEC-03', 'SEC-04'] or re.search(r'\b[1234]\.', title):
+                    # 1. Check direct fields first (Priority)
                     for field in ['security_requirement', 'requirement_description']:
                         val = section.get(field, [])
                         if val:
-                            if isinstance(val, list):
-                                text_val = " ".join([str(i) for i in val if i]).strip()
-                            else:
-                                text_val = str(val).strip()
-                                
-                            match = re.search(r'\b(\d+\.\d+\.\d+)\b', text_val)
+                            text_val = " ".join([str(i) for i in val if i]) if isinstance(val, list) else str(val)
+                            # Match X.Y.Z but ONLY if not preceded by Figure/Fig/Table
+                            match = re.search(r'(?<!Figure\s)(?<!Fig\s)(?<!Table\s)\b(\d+\.\d+\.\d+)\b', text_val, re.IGNORECASE)
                             if match:
                                 base_id = match.group(1)
                                 break
+                    
+                    # 2. Check general content if still not found
                     if not base_id:
                         content = section.get('content', [])
                         check_list = content if isinstance(content, list) else [content]
                         for item in check_list:
-                            text = ""
-                            if isinstance(item, dict): text = item.get('text', '')
-                            elif isinstance(item, list): text = " ".join([str(i) for i in item if i])
-                            else: text = str(item)
-                            
-                            text = text.strip()
-                            match = re.search(r'\b(\d+\.\d+\.\d+)\b', text)
+                            text = item.get('text', '') if isinstance(item, dict) else str(item)
+                            # Match X.Y.Z but ignore Figure/Table/ rId
+                            if "rId" in text or "image" in text.lower(): continue
+                            match = re.search(r'(?<!Figure\s)(?<!Fig\s)(?<!Table\s)\b(\d+\.\d+\.\d+)\b', text, re.IGNORECASE)
                             if match:
                                 base_id = match.group(1)
                                 break
@@ -107,21 +103,65 @@ def check_section_12(file_path):
 
             # 1. Flexible Title Check
             # Using same keywords as scoring for consistency
-            title_norm = normalize(actual_title)
-            is_valid_title = (title_norm.startswith("12 test case res") or 
-                             title_norm.startswith("12 res") or 
-                             title_norm == "12 results")
+            # Improved Title Validation
+            num_match = re.match(r'^([\d\.\s]+)', actual_title)
+            found_num = num_match.group(1).strip().strip('.') if num_match else ""
+            has_correct_num = found_num == "12"
             
-            # Strict title validation - if not exact enough, report as missing and stop
-            if actual_title.replace(':', '').strip().lower() != expected_title.replace(':', '').strip().lower():
-                errors.append({
-                    "where": section_ref, 
-                    "what": "Section 12 missing", 
-                    "suggestion": f"Add {expected_title}", 
-                    "redirect_text": redirect_title,
-                    "severity": "high"
-                })
-                continue # Skip table processing for this section
+            # Formatting / Space Checks
+            actual_clean = " ".join(actual_title.split()).strip()
+            # Standard expected check (normalized)
+            is_match = actual_clean.replace(':', '').strip().lower() == expected_title.replace(':', '').strip().lower()
+            
+            if not is_match:
+                # 1. Wrong Number Check
+                if found_num and found_num != "12":
+                    errors.append({
+                        "where": section_ref,
+                        "what": f"Wrong section number in the title. Found: '{found_num}.', Expected: '12.'",
+                        "suggestion": f"Replace section number '{found_num}.' with '12.'. Expected: '{expected_title}'",
+                        "redirect_text": redirect_title,
+                        "severity": "low"
+                    })
+                
+                # 2. Missing Number Check
+                if not found_num:
+                    errors.append({
+                        "where": section_ref,
+                        "what": f"Section number '12.' is missing in the title. Found: '{actual_title}'",
+                        "suggestion": f"Add the section number prefix. Expected: '{expected_title}'",
+                        "redirect_text": redirect_title,
+                        "severity": "medium"
+                    })
+                
+                # 3. Formatting / Space Checks
+                is_space_issue = (
+                    (num_match and not actual_title[len(num_match.group(0)):].startswith(' ')) or
+                    ".." in actual_title or
+                    "testcase" in actual_title.lower() or
+                    "caseresult" in actual_title.lower() or
+                    "testcaseresult" in actual_title.lower() or
+                    "case result" in actual_title.lower() and "test case result" not in actual_title.lower() and "test" in actual_title.lower()
+                )
+                
+                if is_space_issue or actual_clean != actual_title:
+                    errors.append({
+                        "where": section_ref,
+                        "what": f"Incorrect formatting (space issue) in the title. Found: '{actual_title}'",
+                        "suggestion": f"Fix the title to match: '{expected_title}'",
+                        "redirect_text": redirect_title,
+                        "severity": "low"
+                    })
+                
+                # 4. Fallback: If none of the above specific issues match but it's still not a match
+                if is_match is False and not (found_num and found_num != "12") and found_num and not is_space_issue:
+                    errors.append({
+                        "where": section_ref,
+                        "what": f"Incorrect title format: Found '{actual_title}'",
+                        "suggestion": f"Expected: '{expected_title}'",
+                        "redirect_text": redirect_title,
+                        "severity": "medium"
+                    })
             
             # Check if Table exists
             tc_results_table = target_section.get('test_case_results')
@@ -142,15 +182,18 @@ def check_section_12(file_path):
                     rows = tc_results_table.get('rows', [])
                     if rows and len(rows[0]) > 1:
                          first_id = str(rows[0][1]).strip()
-                         match = re.search(r'^(\d+(\.\d+)+)\.\d+$', first_id)
+                         # Ignore if it looks like a figure or doesn't have 4 parts
+                         match = re.search(r'^(\d+\.\d+\.\d+)\.\d+$', first_id.replace(' ', ''))
                          if match:
                              base_id = match.group(1)
+                             # Optional: Warn that base_id was inferred from table
+                             # errors.append({"where": section_ref, "what": f"Info: Base ID '{base_id}' inferred from table rows.", "severity": "low"})
 
                 if not base_id:
                     errors.append({
                         "where": section_ref,
-                        "what": "Base ID is missing (Alignment check skipped): Found empty in Section 2/3. in " + redirect_title,
-                        "suggestion": "Update Section 2/3 with a valid ID (e.g., 1.1.1: Name)",
+                        "what": "Base ID is missing (Alignment check skipped): Could not identify Security Requirement ID (e.g. 1.1.1) from early sections or table. in " + redirect_title,
+                        "suggestion": "Ensure Section 2 contains the Security Requirement ID (e.g., 1.1.1: Name)",
                         "redirect_text": redirect_title,
                         "severity": "low"
                     })
@@ -169,8 +212,10 @@ def check_section_12(file_path):
                     header0_ref = f"{section_ref} - Column #1"
                     if not header0_raw:
                          errors.append({"where": header0_ref, "what": f"missing 'S. No' header: Found empty. in {redirect_title}", "suggestion": "Expected: 'S. No' or 'Sr. No'", "redirect_text": redirect_title, "severity": "medium"})
+                    elif header0_norm in ["sno", "srno", "slno"]:
+                         errors.append({"where": header0_ref, "what": f"Incorrect formatting (space issue) in the header. Found: '{header0_raw}'", "suggestion": "Expected: 'S. No' or 'Sr. No'", "redirect_text": redirect_title, "severity": "low"})
                     elif header0_norm not in valid_col_0:
-                         errors.append({"where": header0_ref, "what": f"Incorrect table header: Found '{header0_raw}'. in {redirect_title}", "suggestion": "Expected: 'S. No', 'Sr. No', 'S. Number', or 'Sr. Number'", "redirect_text": redirect_title, "severity": "medium"})
+                         errors.append({"where": header0_ref, "what": f"Incorrect table header: Found '{header0_raw}'. in {actual_title}", "suggestion": "Expected: 'S. No', 'Sr. No', 'S. Number', or 'Sr. Number'", "redirect_text": redirect_title, "severity": "medium"})
                     
                     # Column 1: TEST CASE No.
                     valid_col_1 = ["test case no", "test case number", "test case num", "test case name", "test case id", "tc no", "tc number", "tc num", "tc name"]
@@ -179,18 +224,22 @@ def check_section_12(file_path):
                     header1_ref = f"{section_ref} - Column #2"
                     if not header1_raw:
                          errors.append({"where": header1_ref, "what": f"missing 'TEST CASE No.' header: Found empty. in {redirect_title}", "suggestion": "Expected: 'TEST CASE No.'", "redirect_text": redirect_title, "severity": "medium"})
+                    elif "testcase" in header1_norm or "tcno" in header1_norm or "tcnumber" in header1_norm or "tcnum" in header1_norm:
+                         errors.append({"where": header1_ref, "what": f"Incorrect formatting (space issue) in the header. Found: '{header1_raw}'", "suggestion": "Expected: 'TEST CASE No.'", "redirect_text": redirect_title, "severity": "low"})
                     elif header1_norm not in valid_col_1:
-                         errors.append({"where": header1_ref, "what": f"Incorrect table header: Found '{header1_raw}'. in {redirect_title}", "suggestion": "Expected: 'TEST CASE No.'", "redirect_text": redirect_title, "severity": "medium"})
+                         errors.append({"where": header1_ref, "what": f"Incorrect table header: Found '{header1_raw}'. in {actual_title}", "suggestion": "Expected: 'TEST CASE No.'", "redirect_text": redirect_title, "severity": "medium"})
                          
                     # Column 2: PASS FAIL
-                    valid_col_2 = ["pass fail", "status", "result", "results", "pass/fail", "passfail", "result status"]
+                    valid_col_2 = ["pass fail", "status", "result", "results", "pass/fail", "result status"]
                     header2_raw = str(headers[2]).strip()
                     header2_norm = normalize(header2_raw)
                     header2_ref = f"{section_ref} - Column #3"
                     if not header2_raw:
                          errors.append({"where": header2_ref, "what": f"missing 'PASS FAIL' header: Found empty. in {redirect_title}", "suggestion": "Expected: 'PASS FAIL'", "redirect_text": redirect_title, "severity": "medium"})
+                    elif header2_norm == "passfail" or "passfail" in header2_norm:
+                         errors.append({"where": header2_ref, "what": f"Incorrect formatting (space issue) in the header. Found: '{header2_raw}'", "suggestion": "Expected: 'PASS FAIL'", "redirect_text": redirect_title, "severity": "low"})
                     elif header2_norm not in valid_col_2:
-                         errors.append({"where": header2_ref, "what": f"Incorrect table header: Found '{header2_raw}'. in {redirect_title}", "suggestion": "Expected: 'PASS FAIL'", "redirect_text": redirect_title, "severity": "medium"})
+                         errors.append({"where": header2_ref, "what": f"Incorrect table header: Found '{header2_raw}'. in {actual_title}", "suggestion": "Expected: 'PASS FAIL'", "redirect_text": redirect_title, "severity": "medium"})
 
                     # Column 3: Remarks
                     valid_col_3 = ["remarks", "remark", "observations", "observation", "comments", "comment"]
@@ -263,21 +312,32 @@ def check_section_12(file_path):
 
             def get_sort_key(error):
                 where = error.get('where', '')
-                # Handle Section title/missing errors first
-                if where == expected_title:
-                    return (-1, [], severity_order.get(error.get("severity", "Low"), 2))
+                severity = severity_order.get(error.get("severity", "Low"), 2)
 
-                # Extract scenario ID for natural sorting (e.g., 1.1.1.2 before 1.1.1.10)
+                # 1. Handle Section Title errors first
+                if where == expected_title:
+                    return (-2, [], severity)
+
+                # 2. Handle Column/Header errors second
+                if "Column #" in where:
+                    try:
+                        col_match = re.search(r'Column #(\d+)', where)
+                        col_num = int(col_match.group(1)) if col_match else 0
+                        return (-1, [col_num], severity)
+                    except:
+                        return (-1, [99], severity)
+
+                # 3. Handle Row errors (sorted by Scenario ID)
                 # Match format: "12. Test Case Result: - 1.1.1.2"
                 match = re.search(r'-\s*([\d\.\s]+)$', where)
                 if match:
                     id_str = match.group(1).replace(' ', '')
                     if any(c.isdigit() for c in id_str) and not any(c.isalpha() for c in id_str):
                         id_parts = [int(x) for x in id_str.split('.') if x.strip().isdigit()]
-                        return (0, id_parts, severity_order.get(error.get("severity", "Low"), 2))
+                        return (0, id_parts, severity)
 
-                # Fallback for column errors or other descriptions
-                return (1, [where], severity_order.get(error.get("severity", "Low"), 2))
+                # 4. Fallback
+                return (1, [where], severity)
 
             errors.sort(key=get_sort_key)
         return errors if errors else None
