@@ -1,0 +1,34 @@
+TESTING check_match logic mimicking 8.4 main.py:
+Scenario 1: match 81=False, match 11=False
+  FAILED MATCH:
+  norm_combined: 1 to log in to dut open a web browser and enter duts ip address https19216812 in the address bar then input the username as admin and the password as admin123 2 verify that dut support authentication attribute for https
+  norm_81:       verify dut support authentication attribute password certificates keys etc for https
+  norm_11:       verify dut support authentication attribute password certificates keys etc for https
+Scenario 2: match 81=False, match 11=False
+  FAILED MATCH:
+  norm_combined: open a web browser and navigate to the duts ip address using https https19216812 1 when prompted the browser should attempt to validate the duts certificate its a selfsigned certificate a secure warning will appearproceed by accepting the warning 2 once the certificate is accepted the dut should display the login page enter the username admin and the password admin123 3 confirm that access is granted only after successful certificate validation and credential authentication
+  norm_81:       verify that dut support mutual authentication for https
+  norm_11:       verify that dut
+Scenario 3: match 81=False, match 11=False
+  FAILED MATCH:
+  norm_combined: 1 open a web browser and navigate to the duts ip using https https19216812 2 when prompted accept the selfsigned certificate of the server dut 3 on the login page enter an incorrect password eg username admin password wrongpass 4 verify that the dut denies access and shows an authentication failure message
+  norm_81:       verify that mutual authentication fails
+  norm_11:       verify that mutual authentication fails for https when incorrect authentication attribute is provided
+Scenario 4: match 81=True, match 11=False
+Scenario 5: match 81=True, match 11=True
+Scenario 6: match 81=False, match 11=False
+  FAILED MATCH:
+  norm_combined: verify that mutual authen 1 open putty and enter the duts ip address 19216812 in hostname field to initiate the connection 2 accept the duts ssh host key fingerprint if prompted by clicking accept 3 when prompted for credentials enter an incorrect password for example wrongpass123 4 verify that the dut denies access and displays an authentication failure message
+  norm_81:       verify that mutual authentication fails for sshv20 when incorrect authentication attribute is provided
+  norm_11:       b test case description
+Scenario 7: match 81=True, match 11=True
+Scenario 8: match 81=True, match 11=True
+Scenario 9: match 81=True, match 11=True
+Scenario 10: match 81=True, match 11=True
+Scenario 11: match 81=True, match 11=True
+Scenario 12: match 81=False, match 11=False
+  FAILED MATCH:
+  norm_combined: note since the api operates over the https protocol refer to test scenario 1112 verify that secure cryptographic controls are enforced during api communication in this setup the client is authenticated using a password while the server is authenticated through its tls certificate 1 start capturing network traffic using wireshark 2 open a web browser enter duts ip address 19216812 in the address bar when prompted enter the username admin and password admin123 3 after logging in access the duts api which is served over https by entering the following url in the browsers address bar as shown in figure 111122 refer to precondition https19216812apiv1cfgget 4 verify the api communication is encrypted or not using wireshark logs
+  norm_81:       verify that dut support mutual authentication between api client and fortiap
+  norm_11:       b test case description
+Scenario 13: match 81=True, match 11=True

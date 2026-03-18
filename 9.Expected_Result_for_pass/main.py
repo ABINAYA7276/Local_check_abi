@@ -224,29 +224,21 @@ def main():
                     })
                     continue
                 
-                # Check 1: Base ID Mismatch
+                # ID Alignment Check
                 found_parts = found_id.split('.')
-                found_base = ".".join(found_parts[:3]) if len(found_parts) >= 3 else found_id
-                
-                if base_id and found_base != base_id:
-                    all_errors.append({
-                        "pos": position,
-                        "where": where_ref, 
-                        "what": f"Base ID is incorrect. Found '{found_base}'.", 
-                        "suggestion": f"Expected Base ID: {base_id}", 
-                        "redirect_text": actual_redirect, 
-                        "severity": "low"
-                    })
-
-                # Check 2: Sequence Alignment
+                found_base = ".".join(found_parts[:-1]) if len(found_parts) > 1 else ""
                 found_seq = found_parts[-1] if found_parts else ""
-                expected_seq = str(position)
-                if found_seq != expected_seq:
+                
+                is_base_wrong = base_id and found_base != base_id
+                is_seq_wrong = found_seq != str(position)
+                
+                if is_base_wrong or is_seq_wrong:
+                    reason_detail = " (Alignment mismatch)" if is_seq_wrong else ""
                     all_errors.append({
                         "pos": position,
                         "where": where_ref, 
-                        "what": f"ID alignment is incorrect. Found '{found_id}'.", 
-                        "suggestion": f"Correct alignment to .{expected_seq} (Full ID: {base_id or found_base}.{expected_seq})", 
+                        "what": f"test scenario id wrong. Found '{found_id}'.{reason_detail}",
+                        "suggestion": f"Expected: {exp_id}", 
                         "redirect_text": actual_redirect, 
                         "severity": "Low"
                     })
@@ -260,8 +252,8 @@ def main():
                     all_errors.append({
                         "pos": position,
                         "where": where_ref, 
-                        "what": f"Test scenario content is missing. Found ID '{found_id}'.", 
-                        "suggestion": f"Add description after ID {found_id}", 
+                        "what": f"test scenario expected result missing. Found ID '{found_id}'.", 
+                        "suggestion": f"Add expected result for Scenario {found_id}", 
                         "redirect_text": actual_redirect, 
                         "severity": "high"
                     })

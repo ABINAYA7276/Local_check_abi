@@ -180,8 +180,10 @@ def check_section_4(file_path):
                     keywords = ['interface', 'port', 'type', 'name']
                     match_count = sum(1 for k in keywords if k in header_str)
                     
-                    # Assume first table found is target, or use keyword match
-                    if not found_table or match_count >= 1:
+                    # Target table usually has 4 columns or keywords in headers
+                    is_target = match_count >= 1 or len(headers) == 4
+                    
+                    if is_target:
                         found_table = True
                         
                         expected_headers = ["Interfaces", "No.of Ports", "Interface Type", "Interface Name"]

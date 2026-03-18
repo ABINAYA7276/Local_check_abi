@@ -1,0 +1,30 @@
+[
+    {
+        "where": "20. Expected Results for Pass:",
+        "what": "Wrong section number in the title. Found: '20.', Expected: '9.'",
+        "suggestion": "Replace section number '20.' with '9.'. Expected: '9. Expected Results for Pass:'",
+        "redirect_text": "20. Expected Resultsfor Pass:",
+        "severity": "Low"
+    },
+    {
+        "where": "20. Expected Results for Pass:",
+        "what": "Incorrect formatting (space issue) in the title. Found: '20. Expected Resultsfor Pass:'",
+        "suggestion": "Fix the title to exactly match: '9. Expected Results for Pass:'",
+        "redirect_text": "20. Expected Resultsfor Pass:",
+        "severity": "Low"
+    },
+    {
+        "where": "20. Expected Results for Pass: - Test Scenario 1",
+        "what": "test scenario id wrong. Found '1.1.9.9'. (Alignment mismatch)",
+        "suggestion": "Expected: 1.1.2.1",
+        "redirect_text": "20. Expected Resultsfor Pass:",
+        "severity": "Low"
+    },
+    {
+        "where": "20. Expected Results for Pass: - Test Scenario 2",
+        "what": "test scenario id wrong. Found '1.1.5.2'.",
+        "suggestion": "Expected: 1.1.2.2",
+        "redirect_text": "20. Expected Resultsfor Pass:",
+        "severity": "Low"
+    }
+]
