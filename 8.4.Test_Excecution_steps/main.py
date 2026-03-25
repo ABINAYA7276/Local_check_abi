@@ -101,49 +101,7 @@ def main():
                         if base_id: break
                 if base_id: break
 
-        # 2. Section 8.1 sync (Truth Source for Scenarios)
-        section_81_scenarios = []
-        target_81 = None
-        for sec in sections:
-            t = sec.get('title', '').strip().lower()
-            if 'number' in t and 'test' in t and 'scenario' in t:
-                target_81 = sec
-                break
-        
-        if target_81:
-            scenarios_val = target_81.get('test_scenarios', [])
-            if scenarios_val:
-                for item in scenarios_val:
-                    if isinstance(item, dict):
-                        # Extract description
-                        d = item.get('description', '')
-                        if isinstance(d, list): d = " ".join([str(i) for i in d if i])
-                        section_81_scenarios.append(str(d).strip())
-
-        # 2.5. Extract Section 11 Test Case Names (Fallback Cycle Check)
-        section_11_test_names = []
-        for sec in sections:
-            st = sec.get('title', '').strip().lower()
-            if re.match(r'^11\.', st) and ('test case number' in st or 'testcase number' in st):
-                # Simple extraction of "a. Test Case Name"
-                content_items = sec.get('itsar_section_details', sec.get('content', []))
-                items = content_items if isinstance(content_items, list) else [content_items]
-                current_name = ""
-                found_a = False
-                for it in items:
-                    txt = it.get('text', '') if isinstance(it, dict) else str(it)
-                    if not txt.strip(): continue
-                    # Marker check
-                    if re.match(r'^[a]\.\s*', txt.strip(), re.IGNORECASE):
-                        current_name = re.sub(r'^[a]\.\s*(Test\s*Case\s*Name|TestCaseName|Test\s*Case\s*Description|Description)\s*[:.-]*', '', txt.strip(), flags=re.IGNORECASE).strip()
-                        found_a = True
-                        if current_name: break
-                    elif found_a and not current_name and len(txt.strip()) > 5:
-                        current_name = txt.strip()
-                        break
-                section_11_test_names.append(current_name)
-
-        # 3. Identify Section 8.4 (Execution Steps)
+        # 2. Section 8.4 Configuration
         standard_title = "8.4. Test Execution Steps"
         redirect_label = "Test Execution Steps"
         target_section = None
@@ -233,15 +191,31 @@ def main():
                     first_id_last_part = "1"
             
             # ID Alignment Check
-            # exp_id is now purely based on base_id and found_id_count (position)
             exp_id = f"{base_id}.{found_id_count}" if base_id else found_id
             where_ref = f"{display_title} - Test Scenario {exp_id}"
             
-            is_seq_wrong = found_id != exp_id
-            if is_seq_wrong:
+            title_errors = []
+            # 1. Prefix & Space Check
+            # Extract text before the ID
+            m_all = re.search(r'^(.*?)(?:\d+[\d\.\s]*\d+)', text)
+            prefix_text = m_all.group(1).strip() if m_all else ""
+            
+            if prefix_text:
+                if re.fullmatch(r'TestScenario', prefix_text, re.IGNORECASE):
+                    title_errors.append("Incorrect format: Found 'TestScenario' (missing space)")
+                elif not re.fullmatch(r'Test\s+Scenario', prefix_text, re.IGNORECASE):
+                    title_errors.append(f"Garbage text in title: Found '{prefix_text}', Expected: 'Test Scenario'")
+            else:
+                title_errors.append("Missing prefix 'Test Scenario' before the ID")
+
+            # 2. Sequence Check
+            if found_id != exp_id:
+                title_errors.append(f"test scenario id wrong. Found '{found_id}'. (Alignment mismatch)")
+
+            if title_errors:
                 all_errors_table.append({
                     "where": where_ref,
-                    "what": f"test scenario id wrong. Found '{found_id}'. (Alignment mismatch)",
+                    "what": " | ".join(title_errors),
                     "suggestion": f"Expected: {exp_id}",
                     "redirect_text": redirect_label,
                     "severity": "Low"
@@ -250,90 +224,19 @@ def main():
             # 2 & 3. Content and Steps Check
             has_steps = any(is_meaningful_content(s.get('step', '') if isinstance(s, dict) else str(s)) for s in source['steps'])
             
-            def check_match(expected_txt, heading, steps_list, threshold=0.9):
-                if not expected_txt: return False
-                norm_exp = normalize_text(expected_txt)
-                norm_heading = normalize_text(heading)
-                
-                # 1. Substring in heading
-                if norm_exp and norm_exp in norm_heading: return True
-                if norm_heading and norm_heading in norm_exp: return True
-                
-                # 2. Combined comparison (fallback to checking steps text as well)
-                combined = heading + " " + " ".join([str(s.get('step', '')) if isinstance(s, dict) else str(s) for s in steps_list])
-                norm_combined = normalize_text(combined)
-                
-                if norm_exp and norm_exp in norm_combined: return True
-                if norm_combined and norm_combined in norm_exp: return True
-                
-                return False
+            # (Similarity Check Functions Removed)
 
-            content_error = None
-            exp_content = None
-            idx = found_id_count - 1
+            # 3. Content Check
+            where_content = f"{where_ref} - Content"
+            # Does it have any meaningful steps?
+            step_text = " ".join([str(s.get('step', '')) if isinstance(s, dict) else str(s) for s in source['steps']])
             
-            # CYCLE CHECK: 8.1 OR 11
-            found_all = False
-            
-            # Primary: Check against 8.1
-            if idx < len(section_81_scenarios):
-                exp_content = section_81_scenarios[idx]
-                if check_match(exp_content, text, source['steps']):
-                    found_all = True
-            
-            # Fallback: Check against 11
-            if not found_all and idx < len(section_11_test_names):
-                fallback_exp = section_11_test_names[idx]
-                if check_match(fallback_exp, text, source['steps']):
-                    found_all = True
-                    # Update exp_content to what actually worked or existed for proper suggestion fallback
-                    if not exp_content: exp_content = fallback_exp
-
-            if not found_all and (idx < len(section_81_scenarios) or idx < len(section_11_test_names)):
-                content_error = "mismatch" if has_steps else "missing"
-
-            # Reporting (Consolidated)
-            if not has_steps and not text.strip(): # Completely empty
+            if not is_meaningful_content(step_text):
                 all_errors_table.append({
-                    "where": where_ref,
+                    "where": where_content, 
                     "what": "test scenario content missing.",
-                    "suggestion": f"Expected: '{exp_content}'" if exp_content else f"Add execution steps for Scenario {exp_id}",
-                    "redirect_text": redirect_label,
-                    "severity": "High"
-                })
-            elif content_error:
-                if content_error == "mismatch":
-                    clean_text = text.strip()
-                    suggestion_exp = re.sub(r'^test\s*scenario\s*[\d\.\s]+[:.\-]*\s*', '', exp_content if exp_content else '', flags=re.IGNORECASE)
-                    
-                    all_errors_table.append({
-                        "where": where_ref,
-                        "what": "test scenario content wrong.",
-                        "suggestion": f"Expected: '{suggestion_exp}'",
-                        "redirect_text": redirect_label,
-                        "severity": "High"
-                    })
-                else:
-                    all_errors_table.append({
-                        "where": where_ref,
-                        "what": "test scenario content missing.",
-                        "suggestion": f"Expected: '{exp_content}'",
-                        "redirect_text": redirect_label,
-                        "severity": "High"
-                    })
-            
-            scenario_tracker[found_id_count] = True
-
-        # Check for missing scenarios from Section 8.1
-        for i, _ in enumerate(section_81_scenarios, 1):
-            if i not in scenario_tracker:
-                # Use global base_id for the reference
-                eid = f"{base_id}.{i}" if base_id else f"#{i}"
-                all_errors_table.append({
-                    "where": f"{display_title} - Test Scenario {eid}",
-                    "what": f"test scenario content missing. in Test Scenario {eid}",
-                    "suggestion": f"Expected: '{section_81_scenarios[i-1]}'",
-                    "redirect_text": found_title,
+                    "suggestion": "Add technical execution steps.",
+                    "redirect_text": redirect_label, 
                     "severity": "High"
                 })
 

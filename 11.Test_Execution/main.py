@@ -12,10 +12,10 @@ def is_meaningful_content(text: str) -> bool:
         return False
     cleaned = text.strip()
     # Remove common labels GLOBALLY to see if there is actual content
-    temp = re.sub(r'Test\s*Sc[eh]n?ario\s*[:.-]*', '', cleaned, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'Test\s*Case\s+Number\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'[a-e]\.\s*(Test\s*Case\s*Name|TestCaseName|Test\s*Case\s*Description|TestCaseDescription|Execution\s*Steps|ExecutionSteps|Test\s*Observations|TestObservations|Evidence\s*Provided|EvidenceProvided|Description)\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'TC\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'Test\s*Sc[eh]n?arios?\s*[:.-]*', '', cleaned, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'Test\s*Case\s+Numbers?\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'[a-e]\.\s*(Test\s*Case\s*Names?|TestCaseNames?|Test\s*Case\s*Descriptions?|TestCaseDescriptions?|Execution\s*Steps?|ExecutionSteps?|Test\s*Observations?|TestObservations?|Evidence\s*Provideds?|EvidenceProvideds?|Descriptions?)\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'TCs?\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
 
     if not temp or temp.lower() in [".", ":", "-", "_", "...", "n/a", "none", "nil"]:
         return False
@@ -48,6 +48,37 @@ def normalize_text(text: str) -> str:
     # Collapse whitespace
     text = " ".join(text.split())
     return text
+
+
+def normalize_singular(text: str) -> str:
+    """Normalize text to singular form for plural-insensitive comparison.
+    Handles: observations->observation, steps->step, descriptions->description, etc.
+    """
+    if not text:
+        return ""
+    t = text.lower().strip()
+    # Order matters — longer suffixes first
+    plural_pairs = [
+        (r'\bobservations\b',   'observation'),
+        (r'\bdescriptions\b',   'description'),
+        (r'\bexecutions\b',     'execution'),
+        (r'\bsteps\b',          'step'),
+        (r'\bnames\b',          'name'),
+        (r'\bnumbers\b',        'number'),
+        (r'\bdetails\b',        'detail'),
+        (r'\bmechanisms\b',     'mechanism'),
+        (r'\brequirements\b',   'requirement'),
+        (r'\bprotocols\b',      'protocol'),
+        (r'\bevidences\b',      'evidence'),
+        (r'\bcases\b',          'case'),
+        (r'\bscenarios\b',      'scenario'),
+        (r'\binterfaces\b',     'interface'),
+        (r'\bentities\b',       'entity'),
+    ]
+    for pattern, replacement in plural_pairs:
+        t = re.sub(pattern, replacement, t)
+    # Collapse extra whitespace
+    return " ".join(t.split())
 
 def check_itsar_subsections(itsar_details: List[str], test_id: str) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     definitions = {
@@ -106,7 +137,10 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> Tuple[Lis
             
             found_kw = False
             for kw in info['keywords']:
-                if kw in text_lower:
+                # Normalize both sides for singular/plural insensitive match
+                norm_kw       = normalize_singular(kw)
+                norm_text_low = normalize_singular(text_lower)
+                if norm_kw in norm_text_low:
                     is_header = False
                     p_head = r'^' + re.escape(prefix) + r'\s*' + re.escape(kw)
                     if re.match(p_head, text_normalized, re.IGNORECASE):
@@ -122,7 +156,9 @@ def check_itsar_subsections(itsar_details: List[str], test_id: str) -> Tuple[Lis
 
                         actual_label_part = text_normalized.split(':')[0].strip()
                         expected_full_label = f"{prefix} {info['label'].split('. ', 1)[1]}"
-                        if actual_label_part.lower() != expected_full_label.lower():
+                        actual_clean_label = re.sub(r'\s*s$', '', actual_label_part.lower().strip()).strip()
+                        expected_clean_label = re.sub(r'\s*s$', '', expected_full_label.lower().strip()).strip()
+                        if actual_clean_label != expected_clean_label:
                              format_error_map[key] = True
                              found_header_map[key] = text_normalized
 
@@ -310,58 +346,8 @@ def main():
         
         sections = data.get('sections', [])
         
-        # Extract Section 8.1 scenarios
-        section_81_scenarios = []
-        for s81 in sections:
-            s81_title = s81.get('title', '').strip()
-            if "8.1. Number of Test Scenarios" in s81_title or re.search(r'^8\.1\.', s81_title):
-                scenarios = s81.get('test_scenarios', [])
-                for sc in scenarios:
-                    desc = sc.get('description', '')
-                    if desc:
-                        section_81_scenarios.append(desc)
-                break
-        
-        def check_match(expected_txt, target_txt, threshold=0.98):
-            if not expected_txt or not target_txt: return False
-            norm_exp = normalize_text(expected_txt)
-            norm_target = normalize_text(target_txt)
-            # (Substring shortcut removed for strict 98% keyword matching)
-            
-            # Semantic Keyword match
-            keywords = [w for w in norm_exp.split() if len(w) > 3 and w not in ['the', 'and', 'with', 'that', 'this', 'for', 'are']]
-            if keywords:
-                k_matches = sum(1 for kw in keywords if kw in norm_target)
-                if k_matches / len(keywords) >= threshold: return True
-            return False
-        
-        # 3.5. Extract Section 8.4 Test Scenario Headings (Fallback Cycle Check)
-        section_84_test_names = []
-        target_84 = None
-        for sec in sections:
-            st = sec.get('title', '').strip().lower()
-            if '8.4.' in st or ('8.4' in st and 'execution' in st and 'step' in st):
-                target_84 = sec
-                break
-        
-        if target_84:
-            steps_data = target_84.get('execution_steps', [])
-            if steps_data:
-                for item in steps_data:
-                    if isinstance(item, dict):
-                        h = item.get('test_scenario', '')
-                        steps = item.get('steps', [])
-                        # Extract only step with order 0
-                        step_0 = " ".join([str(s.get('step', '')) if isinstance(s, dict) else str(s) for s in steps if s.get('order') == 0])
-                        if step_0:
-                            section_84_test_names.append(step_0.strip())
-                        else:
-                            section_84_test_names.append(str(h).strip())
-            else:
-                for it in target_84.get('content', []):
-                    txt = it.get('text', '') if isinstance(it, dict) else str(it)
-                    if "test scenario" in txt.lower():
-                        section_84_test_names.append(txt.strip())
+        # (Internal Validation Mode: External Section sync removed as requested)
+
         
         test_id_pattern = re.compile(r'\b(\d+\.\d+\.\d+\.\d+)\b')
         test_id_relaxed  = re.compile(r'^(\d+\.\d+\.\d+\.\d+)')  # no word-boundary — catches '1.1.2.6ITSAR'
@@ -589,8 +575,11 @@ def main():
                 
                 # Consolidated Format Check
                 actual_clean = " ".join(actual_title.split()).strip()
+                actual_clean_norm = re.sub(r'numbers?\s*:', 'number:', actual_clean.lower())
+                expected_norm = expected_sub_title.lower()
+                alt_expected_norm = alt_expected.lower()
                 
-                if actual_clean not in [expected_sub_title, alt_expected]:
+                if actual_clean_norm not in [expected_norm, alt_expected_norm]:
                     err_msgs = []
                     # 1. Sequence/ID error
                     if num != l3_exp:
@@ -610,7 +599,7 @@ def main():
                     
                     if is_space_issue:
                         err_msgs.append(f"Incorrect formatting - space issue (Found: '{actual_title}')")
-                    elif actual_clean != expected_sub_title and num == l3_exp:
+                    elif actual_clean_norm != expected_norm and num == l3_exp:
                          err_msgs.append(f"Incorrect title format: Found '{actual_clean}'")
 
                     if err_msgs:
@@ -623,7 +612,7 @@ def main():
                             'severity': 'Low'
                         })
                     all_valid = False
-                elif actual_title not in [expected_sub_title, alt_expected]:
+                elif re.sub(r'numbers?\s*:', 'number:', actual_title.lower()) not in [expected_norm, alt_expected_norm]:
                     # Cleaned matches but original has spacing issues
                     all_errors_table.append({
                         'sort_key': sort_val + 3,
@@ -760,59 +749,20 @@ def main():
                 else:
                     # Validate sub-sections (a, b, c, d, e)
                     orig_sub_err, sections_text = check_itsar_subsections(text_only_content, tid)
-                                  # 4. Content Validation against 8.1 (Scenario Description) OR 8.4 (Scenario Heading)
-                    tc_name_error = None
-                    exp_scenario_desc = None
-                    found_in_triad = False
-                    idx = i - 1
-                    exp_scenario_desc = ""
-
-                    def check_tc_name_match(expected_txt, local_normalized, full_combined_text):
-                        if not expected_txt: return False
-                        # 1. Direct substring check in Section (a/b) content
-                        if check_match(expected_txt, local_normalized): return True
-                        # 2. Fallback check on entire test case combined content
-                        if check_match(expected_txt, full_combined_text): return True
-                        return False
-
-                    full_combined_normalized = normalize_text(" ".join(text_only_content))
-                    
-                    source_ref = ""
-                    # Try matching against 8.1
-                    if idx < len(section_81_scenarios):
-                        exp_scenario_desc = section_81_scenarios[idx]
-                        source_ref = "Section 8.1 (Scenario Description)"
-                        if check_tc_name_match(exp_scenario_desc, "", full_combined_normalized):
-                            found_in_triad = True
-                    
-                    # Fallback cycle check against 8.4
-                    if not found_in_triad and idx < len(section_84_test_names):
-                        fallback_84_desc = section_84_test_names[idx]
-                        if check_tc_name_match(fallback_84_desc, "", full_combined_normalized):
-                            found_in_triad = True
-                            exp_scenario_desc = fallback_84_desc
-                            source_ref = "Section 8.4 (Step 1)"
-
-                    # Error Tracking for a and b
+                    # 4. Local Content Validation
                     tc_name_error = None
                     tc_desc_error = None
                     
-                    if exp_scenario_desc:
-                        # Check Name (a.)
-                        name_text = sections_text.get('a', '').strip()
-                        if not name_text: 
-                            tc_name_error = "missing"
-                        elif not check_match(exp_scenario_desc, normalize_text(name_text)):
-                            tc_name_error = "wrong"
-                        
-                        # Check Description (b.)
-                        desc_text = sections_text.get('b', '').strip()
-                        if not desc_text:
-                            tc_desc_error = "missing"
-                        elif not check_match(exp_scenario_desc, normalize_text(desc_text)):
-                             # If match is found in full combined content but not specifically in b., report as 'wrong' only if name is also wrong
-                             if tc_name_error: tc_desc_error = "wrong"
-                             # Alternatively: if Name is correct but Description is totally different, flag it.
+                    # Check Name (a.)
+                    name_text = sections_text.get('a', '').strip()
+                    if not is_meaningful_content(name_text): 
+                        tc_name_error = "missing"
+                    
+                    # Check Description (b.)
+                    desc_text = sections_text.get('b', '').strip()
+                    if not is_meaningful_content(desc_text):
+                        tc_desc_error = "missing"
+
                     
                     # Process original subsection errors, consolidating with our new checks
                     managed_labels = ['a. Test Case Name', 'b. Test Case Description']
@@ -834,15 +784,17 @@ def main():
                             'severity': err.get('severity', 'High')
                         })
                     
-                    # Error processing with instruction-based suggestions
-                    suggestion_text = f"Synchronize with {source_ref} content." if source_ref else "Provide valid technical details."
+                    # Error processing
+                    suggestion_text_a = "Add test case name."
+                    suggestion_text_b = "Add test case description."
+
 
                     if tc_name_error:
                         all_errors_table.append({
                             'sort_key': sort_val + 4,
                             'where': f"{where_val} - a. Test Case Name",
                             'what': f"test case name content {tc_name_error}.",
-                            'suggestion': suggestion_text,
+                            'suggestion': suggestion_text_a,
                             'redirect_text': redirect_val,
                             'severity': 'High'
                         })
@@ -852,7 +804,7 @@ def main():
                             'sort_key': sort_val + 4.1,
                             'where': f"{where_val} - b. Test Case Description",
                             'what': f"test case description content {tc_desc_error}.",
-                            'suggestion': suggestion_text,
+                            'suggestion': suggestion_text_b,
                             'redirect_text': redirect_val,
                             'severity': 'High'
                         })
@@ -869,29 +821,7 @@ def main():
                         })
                         all_valid = False
 
-            # Check for missing scenarios from 8.1 in Section 11
-            found_scenarios_indices = set()
-            for test in found_test_ids:
-                # Try to map test ID to its index in 8.1
-                tid = test['id']
-                for idx, s81_desc in enumerate(section_81_scenarios, 1):
-                    # We assume sequential order for mapping if IDs don't match exactly
-                    pass
-                # Actually, we use the loop index 'i' above. 
-                # Let's just check if we have fewer test IDs than scenarios.
-            
-            if len(found_test_ids) < len(section_81_scenarios):
-                for i in range(len(found_test_ids) + 1, len(section_81_scenarios) + 1):
-                    exp_id = f"{base_id}.{i}" if base_id else f"Scenario {i}"
-                    all_errors_table.append({
-                        "sort_key": i * 1000 + 999,
-                        "where": f"11. Test Execution - Test Case {exp_id}",
-                        "what": "test case name content missing. (Missing scenario from 8.1)",
-                        "suggestion": f"Expected: '{section_81_scenarios[i-1]}'",
-                        "redirect_text": "Test Execution",
-                        "severity": "High"
-                    })
-                    all_valid = False
+            # (Missing 8.1 Scenarios check removed)
 
     except Exception as e:
         print(json.dumps([{"where": "Process Error", "what": str(e), "suggestion": "Fix JSON"}], indent=4))

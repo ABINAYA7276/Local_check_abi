@@ -93,49 +93,7 @@ def main():
                         if base_id: break
                 if base_id: break
 
-        # 2. Extract Section 8.4 and Section 11 content for Cycle Check
-        section_84_test_names = []
-        section_11_test_names = []
-
-        for sec in sections:
-            st = sec.get('title', '').strip().lower()
-            # Extract 8.4
-            if '8.4.' in st or ('8.4' in st and 'execution' in st and 'step' in st):
-                steps_data = sec.get('execution_steps', [])
-                if steps_data:
-                    for item in steps_data:
-                        if isinstance(item, dict):
-                            h = item.get('test_scenario', '')
-                            steps = item.get('steps', [])
-                            step_0 = " ".join([str(s.get('step', '')) if isinstance(s, dict) else str(s) for s in steps if s.get('order') == 0])
-                            if step_0:
-                                section_84_test_names.append(step_0.strip())
-                            else:
-                                section_84_test_names.append(str(h).strip())
-                else:
-                    for it in sec.get('content', []):
-                        txt = it.get('text', '') if isinstance(it, dict) else str(it)
-                        if "test scenario" in txt.lower():
-                            section_84_test_names.append(txt.strip())
-            
-            # Extract 11
-            if re.match(r'^11\.', st) and ('test case number' in st or 'testcase number' in st):
-                content_items = sec.get('itsar_section_details', sec.get('content', []))
-                items = content_items if isinstance(content_items, list) else [content_items]
-                current_name = ""
-                found_a = False
-                for it in items:
-                    txt = it.get('text', '') if isinstance(it, dict) else str(it)
-                    if not txt.strip(): continue
-                    if re.match(r'^[a]\.\s*', txt.strip(), re.IGNORECASE):
-                        current_name = re.sub(r'^[a]\.\s*(Test\s*Case\s*Name|TestCaseName|Test\s*Case\s*Description|Description)\s*[:.-]*', '', txt.strip(), flags=re.IGNORECASE).strip()
-                        found_a = True
-                        if current_name: break
-                    elif found_a and not current_name and len(txt.strip()) > 5:
-                        current_name = txt.strip()
-                        break
-                section_11_test_names.append(current_name)
-
+        # 2. Extract Section 8.1 Details
         standard_title = "8.1. Number of Test Scenarios"
         redirect_stable = "Number of Test Scenarios"
         
@@ -221,19 +179,6 @@ def main():
                     if parsed_scenarios: parsed_scenarios[-1]['desc'] += " " + p
                     else: parsed_scenarios.append({'header': '', 'desc': p})
 
-        def check_match(expected_txt, target_txt, threshold=0.98):
-            if not expected_txt or not target_txt: return False
-            norm_exp = normalize_text(expected_txt)
-            norm_target = normalize_text(target_txt)
-            # (Substring shortcut removed for strict 98% keyword matching)
-            
-            # Semantic Keyword match
-            keywords = [w for w in norm_exp.split() if len(w) > 3 and w not in ['the', 'and', 'with', 'that', 'this', 'for', 'are']]
-            if keywords:
-                k_matches = sum(1 for kw in keywords if kw in norm_target)
-                if k_matches / len(keywords) >= threshold: return True
-            return False
-
         for item in parsed_scenarios:
             position += 1
             section81_has_content = True
@@ -288,57 +233,13 @@ def main():
                 })
                 if not id_match: continue
 
-            # Content CYCLE Check
-            idx = position - 1
-            is_valid = False
+            # 3. Content Check
             where_content = f"{where_ref} - Content"
-            
-            # Individual check: prioritize the description part for the semantic check
-            check_text = desc
-            
-            if is_meaningful_content(check_text):
-                # Check against 8.4
-                if idx < len(section_84_test_names):
-                    if check_match(check_text, section_84_test_names[idx]): is_valid = True
-                
-                # Check against 11
-                if not is_valid and idx < len(section_11_test_names):
-                    if check_match(check_text, section_11_test_names[idx]): is_valid = True
-                
-                if not is_valid:
-                    source_ref = ""
-                    if idx < len(section_84_test_names): source_ref = "Section 8.4 (Step 1)"
-                    elif idx < len(section_11_test_names): source_ref = "Section 11 (Test Case Name)"
-                    
-                    if source_ref:
-                        suggestion_text = f"Synchronize with {source_ref} content."
-                    else:
-                        suggestion_text = "Provide valid technical description."
-
-                    found_text_snippet = check_text[:100].strip() + ("..." if len(check_text) > 100 else "")
-                    
-                    all_errors_table.append({
-                        "where": where_content, 
-                        "what": f"test scenario content wrong. Found: '{found_text_snippet}'",
-                        "suggestion": suggestion_text,
-                        "redirect_text": actual_redirect, 
-                        "severity": "High"
-                    })
-            else:
-                # Missing content - get instruction based on source
-                source_ref = ""
-                if idx < len(section_84_test_names): source_ref = "Section 8.4 (Step 1)"
-                elif idx < len(section_11_test_names): source_ref = "Section 11 (Test Case Name)"
-                
-                if source_ref:
-                    suggestion_text = f"Synchronize with {source_ref} content."
-                else:
-                    suggestion_text = "Add technical description."
-
+            if not is_meaningful_content(desc):
                 all_errors_table.append({
                     "where": where_content, 
                     "what": "test scenario content missing.",
-                    "suggestion": suggestion_text,
+                    "suggestion": "Add technical description.",
                     "redirect_text": actual_redirect, 
                     "severity": "High"
                 })

@@ -256,7 +256,7 @@ def main():
             if mismatch_84:
                 errors.append({
                     "where":       f"8.4. Test Execution Steps - {sc84_id}",
-                    "what":        f"Section 8.4 scenario content does not match Section 8.1 for {sc84_id}.",
+                    "what":        f"Section 8.4 'Test Case Name' does not match Section 8.1 and Section 11 for {sc84_id}.",
                     "suggestion":  f"Synchronize with {ref_label('81')} content.",
                     "redirect_text": "Test Execution Steps",
                     "severity":    "High"
@@ -264,8 +264,8 @@ def main():
             if mismatch_11:
                 errors.append({
                     "where":       f"11. Test Execution - {tc11_id} - a. Test Case Name",
-                    "what":        f"Section 11 'Test Case Name' does not match Section 8.1 for {tc11_id}.",
-                    "suggestion":  f"Synchronize with {ref_label('81')} content.",
+                    "what":        f"Section 11 'Test Case Name' does not match Section 8.1 and Section 8.4 for {tc11_id}.",
+                    "suggestion":  f"Synchronize with {ref_label('81')} and {ref_label('84')} content.",
                     "redirect_text": tc11_id,
                     "severity":    "High"
                 })
