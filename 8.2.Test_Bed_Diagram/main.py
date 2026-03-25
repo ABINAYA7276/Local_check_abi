@@ -167,9 +167,12 @@ def check_section_8_2(file_path):
                             "severity": "Medium"
                         })
                     
-                    # 2. Name Check - Must be "Test Bed Diagram" (case insensitive, allow flexible spacing)
-                    norm_title = " ".join(figure_title.lower().split())
-                    if norm_title != "test bed diagram":
+                    # 2. Name Check - Must contain 'test', 'bed', 'diagram' keywords (handles hyphens/spacing)
+                    norm_words = figure_title.lower().replace("-", " ").split()
+                    has_test = "test" in norm_words
+                    has_bed = "bed" in norm_words
+                    has_diag = any(w.startswith("diag") for w in norm_words)
+                    if not (has_test and has_bed and has_diag):
                         errors.append({
                             "where": f"{standard_title} - Figure Name Check",
                             "what": f"Incorrect Figure Name: Found '{figure_title}'.",

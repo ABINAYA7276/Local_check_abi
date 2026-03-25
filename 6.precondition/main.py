@@ -135,7 +135,10 @@ def check_section_6(file_path):
         for item in items_to_check:
             text = ""
             if isinstance(item, dict):
-                # Images NO LONGER count as content per discussion
+                # Check if item is an image
+                if item.get('type') == 'image' or item.get('image_path'):
+                    has_valid_content = True
+                    break
                 # Check for 'precondition' key (specific to this section) or generic 'text'
                 text = item.get('precondition', '') or item.get('text', '')
             elif isinstance(item, list):
@@ -152,8 +155,8 @@ def check_section_6(file_path):
         if not has_valid_content:
             errors.append({
                 "where": standard_title,
-                "what": f"content missing. Found: '{found_text_sample}'",
-                "suggestion": "Provide the preconditions details.",
+                "what": "Content missing (No valid text or image found)",
+                "suggestion": "Provide the preconditions details or an image.",
                 "redirect_text": found_title,
                 "severity": "High"
             })

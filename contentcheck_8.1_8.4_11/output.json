@@ -1,0 +1,93 @@
+[
+    {
+        "where": "8.1. Number of Test Scenarios - Test Scenario 1.1.1.88: - Content",
+        "what": "Section 8.1 test scenario 1.1.1.88 description is missing with other section 8.4 test scenario 1.8.1.00 content",
+        "suggestion": "Add or correct the test scenario description to match the other sections.",
+        "redirect_text": "Number of Test Scenarios",
+        "severity": "High"
+    },
+    {
+        "where": "8.1. Number of Test Scenarios - Test Scenario 1.5.1.2: - Content",
+        "what": "Section 8.1 test scenario 1.5.1.2 content does not match with other section 8.4 test scenario 1.1.1.2, 11 test case name 11.1.2 content",
+        "suggestion": "Add or correct the test scenario description to match the other sections.",
+        "redirect_text": "Number of Test Scenarios",
+        "severity": "High"
+    },
+    {
+        "where": "8.1. Number of Test Scenarios - Test Scenario 1.1.1.3: - Content",
+        "what": "Section 8.1 test scenario 1.1.1.3 description is missing",
+        "suggestion": "Add or correct the test scenario description to match the other sections.",
+        "redirect_text": "Number of Test Scenarios",
+        "severity": "High"
+    },
+    {
+        "where": "8.1. Number of Test Scenarios - Test Scenario 1.1.1.5: - Content",
+        "what": "Section 8.1 test scenario 1.1.1.5 content does not match with other section 8.4 test scenario 1.1.1.5 content",
+        "suggestion": "Add or correct the test scenario description to match the other sections.",
+        "redirect_text": "Number of Test Scenarios",
+        "severity": "High"
+    },
+    {
+        "where": "8.1. Number of Test Scenarios - Test Scenario 1.1.1.6: - Content",
+        "what": "Section 8.1 test scenario 1.1.1.6 content does not match with other section 8.4 test scenario 1.1.1.6, 11 test case name 11.1.6 content",
+        "suggestion": "Add or correct the test scenario description to match the other sections.",
+        "redirect_text": "Number of Test Scenarios",
+        "severity": "High"
+    },
+    {
+        "where": "8.1. Number of Test Scenarios - Test Scenario 1.1.1.11: - Content",
+        "what": "Section 8.1 test scenario 1.1.1.11 content does not match with other section 11 test case name 11.1.11 content",
+        "suggestion": "Add or correct the test scenario description to match the other sections.",
+        "redirect_text": "Number of Test Scenarios",
+        "severity": "High"
+    },
+    {
+        "where": "8.4. Test Execution Steps - Test Scenario 1.8.1.00:",
+        "what": "Section 8.4 test scenario 1.8.1.00 step 1 content is missing with other section 8.1 test scenario 1.1.1.88 content",
+        "suggestion": "Add or correct the execution step (order=0) to match the other sections.",
+        "redirect_text": "Test Execution Steps",
+        "severity": "High"
+    },
+    {
+        "where": "8.4. Test Execution Steps - Test Scenario 1.1.1.2:",
+        "what": "Section 8.4 test scenario 1.1.1.2 content does not match with other section 8.1 test scenario 1.5.1.2, 11 test case name 11.1.2 content",
+        "suggestion": "Add or correct the execution step (order=0) to match the other sections.",
+        "redirect_text": "Test Execution Steps",
+        "severity": "High"
+    },
+    {
+        "where": "8.4. Test Execution Steps - Test Scenario 1.1.1.5:",
+        "what": "Section 8.4 test scenario 1.1.1.5 content does not match with other section 8.1 test scenario 1.1.1.5 content",
+        "suggestion": "Add or correct the execution step (order=0) to match the other sections.",
+        "redirect_text": "Test Execution Steps",
+        "severity": "High"
+    },
+    {
+        "where": "8.4. Test Execution Steps - Test Scenario 1.1.1.6:",
+        "what": "Section 8.4 test scenario 1.1.1.6 step 1 content is missing with other section 8.1 test scenario 1.1.1.6, 11 test case name 11.1.6 content",
+        "suggestion": "Add or correct the execution step (order=0) to match the other sections.",
+        "redirect_text": "Test Execution Steps",
+        "severity": "High"
+    },
+    {
+        "where": "11. Test Execution - 11.1.2 Test Case Number: - a. Test Case Name",
+        "what": "Section 11 test case name 11.1.2 content does not match with other section 8.1 test scenario 1.5.1.2, 8.4 test scenario 1.1.1.2 content",
+        "suggestion": "Add or correct 'a. Test Case Name' to match the other sections.",
+        "redirect_text": "11.1.2 Test Case Number:",
+        "severity": "High"
+    },
+    {
+        "where": "11. Test Execution - 11.1.6 Test Case Number: - a. Test Case Name",
+        "what": "Section 11 test case name 11.1.6 content does not match with other section 8.1 test scenario 1.1.1.6, 8.4 test scenario 1.1.1.6 content",
+        "suggestion": "Add or correct 'a. Test Case Name' to match the other sections.",
+        "redirect_text": "11.1.6 Test Case Number:",
+        "severity": "High"
+    },
+    {
+        "where": "11. Test Execution - 11.1.11 Test Case Number: - a. Test Case Name",
+        "what": "Section 11 test case name 11.1.11 content does not match with other section 8.1 test scenario 1.1.1.11 content",
+        "suggestion": "Add or correct 'a. Test Case Name' to match the other sections.",
+        "redirect_text": "11.1.11 Test Case Number:",
+        "severity": "High"
+    }
+]

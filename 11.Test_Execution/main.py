@@ -4,7 +4,7 @@ from pathlib import Path
 import argparse
 import re
 import json
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Any, Union
 
 def is_meaningful_content(text: str) -> bool:
     """Check if text has meaningful content (not placeholder or empty)."""
@@ -12,10 +12,10 @@ def is_meaningful_content(text: str) -> bool:
         return False
     cleaned = text.strip()
     # Remove common labels GLOBALLY to see if there is actual content
-    temp = re.sub(r'Test\s*Sc[eh]n?ario\s*[:.-]*', '', cleaned, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'Test\s*Case\s+Number\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'[a-e]\.\s*(Test\s*Case\s*Name|TestCaseName|Test\s*Case\s*Description|TestCaseDescription|Execution\s*Steps|ExecutionSteps|Test\s*Observations|TestObservations|Evidence\s*Provided|EvidenceProvided|Description)\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
-    temp = re.sub(r'TC\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'Test\s*Sc[eh]n?arios?\s*[:.-]*', '', cleaned, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'Test\s*Case\s+Numbers?\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'[a-e]\.\s*(Test\s*Case\s*Names?|TestCaseNames?|Test\s*Case\s*Descriptions?|TestCaseDescriptions?|Execution\s*Steps?|ExecutionSteps?|Test\s*Observations?|TestObservations?|Evidence\s*Provideds?|EvidenceProvideds?|Descriptions?)\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
+    temp = re.sub(r'TCs?\s*[:.-]*', '', temp, flags=re.IGNORECASE).strip()
 
     if not temp or temp.lower() in [".", ":", "-", "_", "...", "n/a", "none", "nil"]:
         return False
@@ -23,167 +23,204 @@ def is_meaningful_content(text: str) -> bool:
         return False
     return True
 
-def check_itsar_subsections(itsar_details: List[str], test_id: str) -> List[Dict]:
+def normalize_text(text: str) -> str:
+    if not text: return ""
+    text = text.lower().strip()
+    
+    # 1. Semantic Normalization: Standardize common terms
+    text = re.sub(r'\b(verified|verifying|verification|to\s*verify)\b', 'verify', text)
+    text = re.sub(r'\b(supports|supported|supporting)\b', 'support', text)
+    text = re.sub(r'\b(mechanism|mechanisms)\b', 'mechanism', text)
+    text = re.sub(r'\b(requirement|requirements)\b', 'requirement', text)
+    text = re.sub(r'\b(protocol|protocols)\b', 'protocol', text)
+    text = re.sub(r'\b(security|secure|secured)\b', 'secure', text)
+    
+    # 2. General Cleanup
+    # Remove common prefixes
+    text = re.sub(r'^test\s*case\s*name\s*[:\-]*\s*', '', text)
+    text = re.sub(r'^test\s*scen?ario\s*[\d\.\s]+[:\-]*\s*', '', text)
+    text = re.sub(r'^positive\s*scenario\s*[:\-]*\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^negative\s*scenario\s*[:\-]*\s*', '', text, flags=re.IGNORECASE)
+    
+    # Remove all non-alphanumeric except spaces
+    text = re.sub(r'[^a-z0-9\s]', '', text)
+    
+    # Collapse whitespace
+    text = " ".join(text.split())
+    return text
+
+
+def normalize_singular(text: str) -> str:
+    """Normalize text to singular form for plural-insensitive comparison.
+    Handles: observations->observation, steps->step, descriptions->description, etc.
+    """
+    if not text:
+        return ""
+    t = text.lower().strip()
+    # Order matters — longer suffixes first
+    plural_pairs = [
+        (r'\bobservations\b',   'observation'),
+        (r'\bdescriptions\b',   'description'),
+        (r'\bexecutions\b',     'execution'),
+        (r'\bsteps\b',          'step'),
+        (r'\bnames\b',          'name'),
+        (r'\bnumbers\b',        'number'),
+        (r'\bdetails\b',        'detail'),
+        (r'\bmechanisms\b',     'mechanism'),
+        (r'\brequirements\b',   'requirement'),
+        (r'\bprotocols\b',      'protocol'),
+        (r'\bevidences\b',      'evidence'),
+        (r'\bcases\b',          'case'),
+        (r'\bscenarios\b',      'scenario'),
+        (r'\binterfaces\b',     'interface'),
+        (r'\bentities\b',       'entity'),
+    ]
+    for pattern, replacement in plural_pairs:
+        t = re.sub(pattern, replacement, t)
+    # Collapse extra whitespace
+    return " ".join(t.split())
+
+def check_itsar_subsections(itsar_details: List[str], test_id: str) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     definitions = {
-        'a': {'label': 'a. Test Case Name', 'keywords': ['test case name', 'testcase name', 'testcasename'], 'prefix': 'a.'},
-        'b': {'label': 'b. Test Case Description', 'keywords': ['test case description', 'testcase description', 'testcasedescription', 'description'], 'prefix': 'b.'},
-        'c': {'label': 'c. Execution Steps', 'keywords': ['execution steps', 'execution step', 'executionsteps', 'execution'], 'prefix': 'c.'},
-        'd': {'label': 'd. Test Observations', 'keywords': ['test observation', 'testobservation', 'observation'], 'prefix': 'd.'},
-        'e': {'label': 'e. Evidence Provided', 'keywords': ['evidence provided', 'evidenceprovided', 'evidence'], 'prefix': 'e.'},
+        'a': {'label': 'a. Test Case Name', 'keywords': ['test case name', 'testcase name', 'testcasename']},
+        'b': {'label': 'b. Test Case Description', 'keywords': ['test case description', 'testcase description', 'testcasedescription', 'description']},
+        'c': {'label': 'c. Execution Steps', 'keywords': ['execution steps', 'execution step', 'executionsteps', 'execution']},
+        'd': {'label': 'd. Test Observations', 'keywords': ['test observation', 'testobservation', 'observation']},
+        'e': {'label': 'e. Evidence Provided', 'keywords': ['evidence provided', 'evidenceprovided', 'evidence']},
     }
     
-    sections_status = {key: {'found': False, 'has_content': False, 'label': d['label'], 'wrong_prefix': None, 'found_text': '', 'intended_header': None} for key, d in definitions.items()}
+    # Use a simpler dictionary to track status
+    found_map = {k: False for k in definitions}
+    content_map = {k: False for k in definitions}
+    text_accum = {k: "" for k in definitions}
+    wrong_prefix_map = {k: "" for k in definitions}
+    format_error_map = {k: False for k in definitions}
+    found_header_map = {k: "" for k in definitions}
+    intended_header_map = {k: "" for k in definitions}
+
     current_section = None
     first_line = None
     
-    # Preprocess: Split long concatenated strings by section markers
     expanded_details = []
-    # More flexible pattern to catch variations
-    pattern = r'([a-e]\.\s*(?:Test\s*Case\s*Name|Test\s*Case\s*Description|Description|Execution\s*Steps?|Test\s*Observations?|Observations?|Evidence\s*Provided|Evidence))'
+    marker_pattern = r'([a-e]\.\s*(?:Test\s*Case\s*Name|Test\s*Case\s*Description|Description|Execution\s*Steps?|Test\s*Observations?|Observations?|Evidence\s*Provided|Evidence))'
     
     for detail in itsar_details:
         if not isinstance(detail, str): continue
         text = detail.strip()
         if not text: continue
 
-        matches = re.findall(pattern, text, flags=re.IGNORECASE)
-        marker_count = len(matches)
+        parts = re.split(marker_pattern, text, flags=re.IGNORECASE)
+        # re.split with capture groups returns [pre_match, match_group1, post_match_pre_next_match, match_group1, ...]
+        # Example: "Intro a.TCName: Content b.TCDesc: More" -> ["Intro ", "a.TCName", ": Content ", "b.TCDesc", ": More"]
         
-        if marker_count > 1:
-            parts = re.split(pattern, text, flags=re.IGNORECASE)
-            # Reconstruct by pairing markers with their content
-            for i in range(len(parts)):
-                part = parts[i].strip()
-                if part:
-                    if i < len(parts) - 1 and re.match(pattern, part, re.IGNORECASE):
-                        combined = part + ' ' + parts[i+1].strip()
-                        expanded_details.append(combined)
-                    elif i == 0 or not re.match(pattern, parts[i-1], re.IGNORECASE):
-                        expanded_details.append(part)
-        else:
-            expanded_details.append(text)
+        # If the first part is not a marker, it's initial content
+        if parts and parts[0].strip() and not re.match(marker_pattern, parts[0], re.IGNORECASE):
+            expanded_details.append(parts[0].strip())
+        
+        # Iterate through the rest, combining marker with its content
+        for i in range(1, len(parts), 2): # Start from 1, step by 2 to get markers
+            marker = parts[i].strip()
+            content_after_marker = parts[i+1].strip() if i+1 < len(parts) else ""
+            if marker:
+                expanded_details.append(f"{marker} {content_after_marker}".strip())
+            elif content_after_marker: # Should not happen if marker_pattern is correct, but for safety
+                expanded_details.append(content_after_marker)
     
-    for detail in expanded_details:
-        if not isinstance(detail, str): continue
-        text = detail.strip()
-        text_normalized = ' '.join(text.split())
+    for text_normalized in [ ' '.join(str(d).split()) for d in expanded_details if d ]:
         text_lower = text_normalized.lower()
-        
-        if not text_normalized: continue
         if first_line is None: first_line = text_normalized
         found_marker = False
         
         for key, info in definitions.items():
-            if sections_status[key]['found'] and not sections_status[key]['wrong_prefix']: continue
+            prefix = key + "."
+            if found_map[key] and not wrong_prefix_map[key]: continue
             
-            # Check for keyword matches
             found_kw = False
             for kw in info['keywords']:
-                kw_norm = ' '.join(kw.split())
-                if kw_norm in text_lower:
+                # Normalize both sides for singular/plural insensitive match
+                norm_kw       = normalize_singular(kw)
+                norm_text_low = normalize_singular(text_lower)
+                if norm_kw in norm_text_low:
                     is_header = False
-                    p_head = r'^' + re.escape(info['prefix']) + r'\s*' + re.escape(kw_norm)
+                    p_head = r'^' + re.escape(prefix) + r'\s*' + re.escape(kw)
                     if re.match(p_head, text_normalized, re.IGNORECASE):
                         is_header = True
-                    if not is_header:
-                        if text_lower.startswith(info['prefix']):
-                             if kw_norm in text_lower[:50]: is_header = True
+                    elif text_lower.startswith(prefix) and kw in text_lower[:50]:
+                        is_header = True
 
                     if is_header:
-                        sections_status[key]['found'] = True
-                        sections_status[key]['intended_header'] = None
+                        found_map[key] = True
                         current_section = key
                         found_marker = True
                         found_kw = True
 
-                        # Check for missing spaces or exact format mismatch
                         actual_label_part = text_normalized.split(':')[0].strip()
-                        if actual_label_part.lower() != info['label'].lower():
-                             # It matched enough to be 'found', but formatting is wrong
-                             sections_status[key]['format_error'] = True
-                             sections_status[key]['found_header'] = text_normalized
+                        expected_full_label = f"{prefix} {info['label'].split('. ', 1)[1]}"
+                        actual_clean_label = re.sub(r'\s*s$', '', actual_label_part.lower().strip()).strip()
+                        expected_clean_label = re.sub(r'\s*s$', '', expected_full_label.lower().strip()).strip()
+                        if actual_clean_label != expected_clean_label:
+                             format_error_map[key] = True
+                             found_header_map[key] = text_normalized
 
-                        p_content = r'^' + re.escape(info['prefix']) + r'\s*' + re.escape(kw_norm) + r'[:\-]?\s*'
+                        p_content = r'^' + re.escape(prefix) + r'\s*' + re.escape(kw) + r'[:\-]?\s*'
                         remaining = re.sub(p_content, '', text_normalized, count=1, flags=re.IGNORECASE).strip()
-                        if is_meaningful_content(remaining): sections_status[key]['has_content'] = True
+                        if is_meaningful_content(remaining): 
+                            content_map[key] = True
+                            text_accum[key] = remaining
                         break
-                    else:
-                        if re.match(r'^[\d\w\.]+\s*' + re.escape(kw_norm), text_normalized, re.IGNORECASE):
-                            sections_status[key]['found'] = True
-                            sections_status[key]['wrong_prefix'] = text_normalized
-                            current_section = key
-                            found_marker = True
-                            found_kw = True
-                            p_any_prefix = r'^.*?'+re.escape(kw_norm)+r'[:\-]?\s*'
-                            remaining = re.sub(p_any_prefix, '', text_normalized, count=1, flags=re.IGNORECASE).strip()
-                            if is_meaningful_content(remaining): sections_status[key]['has_content'] = True
-                            break
+                    elif re.match(r'^[\d\w\.]+\s*' + re.escape(kw), text_normalized, re.IGNORECASE):
+                        found_map[key] = True
+                        wrong_prefix_map[key] = text_normalized
+                        current_section = key
+                        found_marker = True
+                        found_kw = True
+                        p_any_prefix = r'^.*?'+re.escape(kw)+r'[:\-]?\s*'
+                        remaining = re.sub(p_any_prefix, '', text_normalized, count=1, flags=re.IGNORECASE).strip()
+                        if is_meaningful_content(remaining): 
+                            content_map[key] = True
+                            text_accum[key] = remaining
+                        break
             
-            if not found_kw:
-                # Potential header match by prefix alone (for reporting typos)
-                if text_lower.startswith(info['prefix']) and not sections_status[key]['found']:
-                    if not sections_status[key]['intended_header']:
-                        sections_status[key]['intended_header'] = text_normalized
+            if not found_kw and text_lower.startswith(prefix) and not found_map[key]:
+                if not intended_header_map[key]:
+                    intended_header_map[key] = text_normalized
             
             if found_marker: break
         
         if not found_marker and current_section:
-            if is_meaningful_content(text):
-                sections_status[current_section]['has_content'] = True
-                if not sections_status[current_section]['found_text']:
-                    sections_status[current_section]['found_text'] = text
+            if is_meaningful_content(text_normalized):
+                content_map[current_section] = True
+                if text_accum[current_section]:
+                    text_accum[current_section] += " " + text_normalized
+                else:
+                    text_accum[current_section] = text_normalized
                 
-    errors = []
-    for key, status in sections_status.items():
-        label = status['label']
-        if not status['found']:
-            intended = status.get('intended_header')
+    errors: List[Dict[str, Any]] = []
+    for key, info in definitions.items():
+        label = str(info.get('label', ''))
+        if not found_map.get(key):
+            intended = str(intended_header_map.get(key, ""))
             if intended:
-                why = f"Incorrect header format: Found '{intended}'"
-                suggestion = f"Expected: '{label}:'"
-                sev = 'Medium'
+                errors.append({'why': f"Incorrect header format: Found '{intended}'", 'suggestion': f"Expected: '{label}:'", 'label': label, 'severity': 'Medium'})
             else:
-                why = f"Missing section: '{label}' section not found"
-                if first_line:
+                why_msg = f"Missing section: '{label}' section not found"
+                if first_line is not None:
                     display_line = first_line[:50] + "..." if len(first_line) > 50 else first_line
-                    why += f". Found: '{display_line}'"
-                suggestion = f"Add '{label}' section"
-                sev = 'High'
-            
-            errors.append({
-                'why': why, 
-                'suggestion': suggestion, 
-                'label': label,
-                'severity': sev
-            })
+                    why_msg += f". Found: '{display_line}'"
+                errors.append({'why': why_msg, 'suggestion': f"Add '{label}' section", 'label': label, 'severity': 'High'})
         else:
-            if status['wrong_prefix']:
-                why = f"Incorrect prefix: Found '{status['wrong_prefix']}'"
-                errors.append({
-                    'why': why, 
-                    'suggestion': f"Expected: '{label}:'", 
-                    'label': label,
-                    'severity': 'Medium'
-                })
+            if wrong_prefix_map.get(key):
+                errors.append({'why': f"Incorrect prefix: Found '{wrong_prefix_map[key]}'", 'suggestion': f"Expected: '{label}:'", 'label': label, 'severity': 'Medium'})
             
-            # Check for space/format error (a, b, c, d, e)
-            if status.get('format_error'):
-                 errors.append({
-                    'why': f"Incorrect header format: Found '{status['found_header'].split(':')[0].strip()}'",
-                    'suggestion': f"Expected: '{label}:'",
-                    'label': label,
-                    'severity': 'Low'
-                })
+            if format_error_map.get(key):
+                 header_text = str(found_header_map.get(key, "Unknown"))
+                 found_label = header_text.split(':')[0].strip() if ':' in header_text else header_text[:20]
+                 errors.append({'why': f"Incorrect header format: Found '{found_label}'", 'suggestion': f"Expected: '{label}:'", 'label': label, 'severity': 'Low'})
 
-            if not status['has_content']:
-                why = f"Missing content: Found empty in '{label}' section"
-                errors.append({
-                    'why': why, 
-                    'suggestion': f"Add content after '{label}'", 
-                    'label': label,
-                    'severity': 'High'
-                })
-    return errors
+            if not content_map.get(key):
+                errors.append({'why': f"Missing content: Found empty in '{label}' section", 'suggestion': f"Add content after '{label}'", 'label': label, 'severity': 'High'})
+    
+    return errors, text_accum
 
 def check_figure_ids(items: List, expected_tc_number: str, test_id: str) -> List[Dict]:
     errors = []
@@ -308,6 +345,10 @@ def main():
             data = json.load(f)
         
         sections = data.get('sections', [])
+        
+        # (Internal Validation Mode: External Section sync removed as requested)
+
+        
         test_id_pattern = re.compile(r'\b(\d+\.\d+\.\d+\.\d+)\b')
         test_id_relaxed  = re.compile(r'^(\d+\.\d+\.\d+\.\d+)')  # no word-boundary — catches '1.1.2.6ITSAR'
 
@@ -386,37 +427,25 @@ def main():
         redirect_title_11 = re.sub(r'^[\d\.]+\s*', '', found_title).strip() or found_title
         
         if not (has_correct_num and "test execution" in title_lower):
+            error_details = []
             if has_any_number and not has_correct_num:
-                # Title body is correct but section number is wrong
                 wrong_num = num_match.group(1).strip()
-                all_errors_table.append({
-                    "sort_key": 5,
-                    "where": display_title_11,
-                    "what": f"Wrong section number in the title. Found: '{wrong_num}', Expected: '11.'",
-                    "suggestion": f"Replace section number '{wrong_num}' with '11.'. Expected: '{expected_title_11}'",
-                    "redirect_text": redirect_title_11,
-                    "severity": "Low"
-                })
+                error_details.append(f"Wrong section number (Found: '{wrong_num}', Expected: '11.')")
             elif not has_any_number:
-                # Title body is correct but section number "11." is missing entirely
-                all_errors_table.append({
-                    "sort_key": 5,
-                    "where": display_title_11,
-                    "what": f"Section number is missing in the title. Found: '{found_title}'",
-                    "suggestion": f"Add the section number prefix. Expected: '{expected_title_11}'",
-                    "redirect_text": redirect_title_11,
-                    "severity": "Medium"
-                })
+                error_details.append(f"Section number is missing (Found: '{found_title}')")
 
-            # Formatting / Space Checks
             if "test execution" not in title_lower:
                 is_space_issue = any(part in title_lower for part in ["testexecution", "11..", "test-execution"])
-                what_msg = f"Incorrect formatting (space issue) in the title. Found: '{found_title}'" if is_space_issue else f"Incorrect formatting in the title. Found: '{found_title}'"
-                
+                if is_space_issue:
+                    error_details.append(f"Incorrect formatting - space issue (Found: '{found_title}')")
+                else:
+                    error_details.append(f"Incorrect formatting (Found: '{found_title}')")
+            
+            if error_details:
                 all_errors_table.append({
-                    "sort_key": 6,
+                    "sort_key": 5,
                     "where": display_title_11,
-                    "what": what_msg,
+                    "what": "Section title is incorrect. " + " ".join(error_details),
                     "suggestion": f"Fix the title to exactly match: '{expected_title_11}'",
                     "redirect_text": redirect_title_11,
                     "severity": "Low"
@@ -546,18 +575,15 @@ def main():
                 
                 # Consolidated Format Check
                 actual_clean = " ".join(actual_title.split()).strip()
+                actual_clean_norm = re.sub(r'numbers?\s*:', 'number:', actual_clean.lower())
+                expected_norm = expected_sub_title.lower()
+                alt_expected_norm = alt_expected.lower()
                 
-                if actual_clean not in [expected_sub_title, alt_expected]:
+                if actual_clean_norm not in [expected_norm, alt_expected_norm]:
+                    err_msgs = []
                     # 1. Sequence/ID error
                     if num != l3_exp:
-                        all_errors_table.append({
-                            'sort_key': sort_val,
-                            'where': where_sub, 
-                            'what': f"Incorrect sequence/base: Found '{num}' instead of '{l3_exp}'", 
-                            'suggestion': f"Expected: '{expected_sub_title}'", 
-                            'redirect_text': re.sub(r'^[\d\.]+\s*', '', str(tc['title'])).strip(),
-                            'severity': 'Low'
-                        })
+                        err_msgs.append(f"Incorrect sequence/base: Found '{num}' instead of '{l3_exp}'")
                     
                     # 2. Specific Space Check (e.g., '11.1.3Test' or '11.1.1TestCase')
                     found_id_pattern = re.escape(num.strip('.'))
@@ -572,28 +598,21 @@ def main():
                     )
                     
                     if is_space_issue:
+                        err_msgs.append(f"Incorrect formatting - space issue (Found: '{actual_title}')")
+                    elif actual_clean_norm != expected_norm and num == l3_exp:
+                         err_msgs.append(f"Incorrect title format: Found '{actual_clean}'")
+
+                    if err_msgs:
                         all_errors_table.append({
-                            'sort_key': sort_val + 1,
+                            'sort_key': sort_val,
                             'where': where_sub, 
-                            'what': f"Incorrect formatting (space issue) in the title. Found: '{actual_title}'", 
+                            'what': "Section title is incorrect. " + " ".join(err_msgs), 
                             'suggestion': f"Expected: '{expected_sub_title}'", 
                             'redirect_text': re.sub(r'^[\d\.]+\s*', '', str(tc['title'])).strip(),
                             'severity': 'Low'
                         })
-                    
-                    # 3. Fallback (Generic Format Error)
-                    # Only show if not already explained by sequence or spacing issues
-                    if actual_clean != expected_sub_title and not is_space_issue and num == l3_exp:
-                        all_errors_table.append({
-                            'sort_key': sort_val + 2,
-                            'where': where_sub, 
-                            'what': f"Incorrect title format: Found '{actual_clean}'", 
-                            'suggestion': f"Expected: '{expected_sub_title}'", 
-                            'redirect_text': re.sub(r'^[\d\.]+\s*', '', str(tc['title'])).strip(),
-                            'severity': 'Medium'
-                        })
                     all_valid = False
-                elif actual_title not in [expected_sub_title, alt_expected]:
+                elif re.sub(r'numbers?\s*:', 'number:', actual_title.lower()) not in [expected_norm, alt_expected_norm]:
                     # Cleaned matches but original has spacing issues
                     all_errors_table.append({
                         'sort_key': sort_val + 3,
@@ -729,10 +748,33 @@ def main():
                     all_valid = False
                 else:
                     # Validate sub-sections (a, b, c, d, e)
-                    sub_err = check_itsar_subsections(text_only_content, tid)
-                    for err_idx, err in enumerate(sub_err):
-                        # Update where to be more specific if possible
-                        detailed_where = f"{where_val} - {err['label']}"
+                    orig_sub_err, sections_text = check_itsar_subsections(text_only_content, tid)
+                    # 4. Local Content Validation
+                    tc_name_error = None
+                    tc_desc_error = None
+                    
+                    # Check Name (a.)
+                    name_text = sections_text.get('a', '').strip()
+                    if not is_meaningful_content(name_text): 
+                        tc_name_error = "missing"
+                    
+                    # Check Description (b.)
+                    desc_text = sections_text.get('b', '').strip()
+                    if not is_meaningful_content(desc_text):
+                        tc_desc_error = "missing"
+
+                    
+                    # Process original subsection errors, consolidating with our new checks
+                    managed_labels = ['a. Test Case Name', 'b. Test Case Description']
+                    for err_idx, err in enumerate(orig_sub_err):
+                        label = err.get('label', '')
+                        # Handle managed labels separately
+                        if label in managed_labels:
+                            # Skip generic "missing" or "not found" if we are about to report specifically
+                            if "Missing content" in err['why'] or "section not found" in err['why']:
+                                continue
+                            
+                        detailed_where = f"{where_val} - {label}"
                         all_errors_table.append({
                             'sort_key': sort_val + 4 + (err_idx * 0.1),
                             'where': detailed_where, 
@@ -741,7 +783,31 @@ def main():
                             'redirect_text': redirect_val, 
                             'severity': err.get('severity', 'High')
                         })
-                        all_valid = False
+                    
+                    # Error processing
+                    suggestion_text_a = "Add test case name."
+                    suggestion_text_b = "Add test case description."
+
+
+                    if tc_name_error:
+                        all_errors_table.append({
+                            'sort_key': sort_val + 4,
+                            'where': f"{where_val} - a. Test Case Name",
+                            'what': f"test case name content {tc_name_error}.",
+                            'suggestion': suggestion_text_a,
+                            'redirect_text': redirect_val,
+                            'severity': 'High'
+                        })
+                    
+                    if tc_desc_error:
+                        all_errors_table.append({
+                            'sort_key': sort_val + 4.1,
+                            'where': f"{where_val} - b. Test Case Description",
+                            'what': f"test case description content {tc_desc_error}.",
+                            'suggestion': suggestion_text_b,
+                            'redirect_text': redirect_val,
+                            'severity': 'High'
+                        })
                     
                     fig_err = check_figure_ids(content, expected_sub_prefix, tid)
                     for fig_idx, err in enumerate(fig_err):
@@ -754,6 +820,8 @@ def main():
                             'severity': err.get('severity', 'Low')
                         })
                         all_valid = False
+
+            # (Missing 8.1 Scenarios check removed)
 
     except Exception as e:
         print(json.dumps([{"where": "Process Error", "what": str(e), "suggestion": "Fix JSON"}], indent=4))
